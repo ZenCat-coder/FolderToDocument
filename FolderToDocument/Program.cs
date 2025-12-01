@@ -5,6 +5,7 @@ Console.WriteLine("====================");
 
 var generator = new FolderDocumentGenerator();
 
+
 try
 {
     // 设置要扫描的项目文件夹路径
