@@ -1,89 +1,71 @@
 ﻿using FolderToDocument;
 
-Console.WriteLine("=> 文件夹文档生成器");
-Console.WriteLine("====================");
+Console.WriteLine("=> 文件夹文档生成器 [v3.0 AI 交互增强版]");
+Console.WriteLine("=========================================");
 
 var generator = new FolderDocumentGenerator();
 
-
 try
 {
-    // 设置要扫描的项目文件夹路径
-    //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoAppMallService";
+    // 1. 配置：输入你需要扫描的项目路径
     string folderPath = @"E:\MyCode\FolderToDocument";
+    //string folderPath = @"E:\MyScript\ZenlessZoneZero";
 
-    // 设置自定义输出路径
-    string outputPath = "";
-
-    // 设置包含模式 - 使用更简单的模式
+    // 2. 配置：包含模式（推荐只包含主模块，防止 Token 溢出）
     var includedPatterns = new List<string>
     {
-        //"ZYRobberyStormGameModule/**", // 包含整个业务模块
-        //"ZYSigninModule/**",
-        //"ZYIdiomsSolitaireGamesModule/**"
-        //"ZYWireDefuserGameModule/**",
-        //"ZYAppMallBusinessModule/**"
-        //"ZYImageGuessIdiomModule/**"
-        //"ZYAgentAssistant/**"
-        //"ZYSlaveGameModule/**"
-        //"ZYFishingGameModule/**",
-        //"ZYEventModule/**"
-        "FolderToDocument/**"
+        "FolderToDocument/**",
+        // "Scripts/**",
+        // "Infrastructure/**",
+        // "ZenlessZoneZero/**",
+        "*.sln",
+        "global.json",
+        ".gitignore"
     };
-    
-    //  示例2：包含业务模块和项目结构文件
-    // var includedPatterns = new List<string>
-    // {
-    //     "ZYCsjOrderReceiptBusinessModule/**", // 业务模块所有文件
-    //     "*.sln", // 解决方案文件
-    //     "**/*.csproj" // 所有项目文件
-    // };
-    
-    // 验证输入目录是否存在
+
+    // 路径合法性校验
     if (!Directory.Exists(folderPath))
     {
-        Console.WriteLine($"[错误] 指定的目录不存在: {folderPath}");
-        Console.WriteLine("请修改 Program.cs 中的 folderPath 变量为有效的项目路径");
-        Console.WriteLine("按任意键退出...");
-        Console.ReadKey();
+        Console.WriteLine($"[错误] 找不到路径: {folderPath}");
         return;
     }
 
-    // 显示项目信息
     string projectName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar));
-    Console.WriteLine($"[项目] 项目名称: {projectName}");
-    Console.WriteLine($"[路径] 项目路径: {folderPath}");
-    Console.WriteLine($"[输出] 输出路径: {outputPath}");
-    //Console.WriteLine($"[过滤] 包含模式: {string.Join(", ", includedPatterns)}");
+    Console.WriteLine($"[任务] 分析项目: {projectName}");
+    Console.WriteLine($"[模式] 包含规则: {string.Join(", ", includedPatterns)}");
     Console.WriteLine();
+    
+    // 默认输出至: 你的工作目录/Md/项目名/项目名.md
+    // 3. 配置：自定义 AI 专项要求 (这些会直接出现在 MD 文件的头部指令中)
+    var myRequirements = new List<string> 
+    {
+        "请确保所有修改都严格遵循生成的 Markdown 模板格式。", 
+        "目前我这个模板还可以怎么优化。主要用途是给ai修代码，优化用" 
+    };
+    
+    // 4. 执行生成
+    // 传入模式 (optimize 或 debug) 以及自定义要求
+    string finalPath = await generator.GenerateDocumentAsync(
+        folderPath, 
+        null, 
+        includedPatterns, 
+        taskMode: "optimize", 
+        customRequirements: myRequirements // <--- Optimization
+    );
 
-    // 生成文档 - 传入包含模式
-    string finalOutputPath = await generator.GenerateDocumentAsync(folderPath, outputPath,includedPatterns);
-
-    // 显示成功信息和使用说明
-    Console.WriteLine();
-    Console.WriteLine("[完成] 文档生成完成！");
-    Console.WriteLine();
-    Console.WriteLine("使用说明:");
-    Console.WriteLine($"1. 文档已保存到: {finalOutputPath}");
-    Console.WriteLine($"2. 您可以在文件管理器中打开此文件");
-    Console.WriteLine($"3. 推荐使用 Markdown 编辑器（如 VS Code、Typora）查看");
-    Console.WriteLine($"4. 文档包含筛选后的项目结构和代码内容");
-    Console.WriteLine($"5. 配置文件已自动脱敏处理，敏感信息已隐藏");
+    // 4. 结果反馈
+    Console.WriteLine("\n[🎉 成功] 文档已针对 AI 进行了深度优化并生成！");
+    Console.WriteLine($"[📍 文件] {finalPath}");
+    Console.WriteLine("\n💡 建议操作：");
+    Console.WriteLine("1. 使用 VS Code 打开此 MD 文件预览效果。");
+    Console.WriteLine("2. 全选内容并粘贴给 AI (如 ChatGPT 或 Claude)。");
+    Console.WriteLine("3. 由于带有了【行号】和【指令集】，你可以直接命令 AI 修改具体代码块。");
 }
 catch (Exception ex)
 {
-    Console.WriteLine();
-    Console.WriteLine($"[异常] 程序执行过程中发生错误:");
-    Console.WriteLine($"错误类型: {ex.GetType().Name}");
-    Console.WriteLine($"错误信息: {ex.Message}");
-
-    if (ex is UnauthorizedAccessException)
-    {
-        Console.WriteLine();
-        Console.WriteLine("解决方案建议:");
-        Console.WriteLine("1. 以管理员身份运行此程序");
-        Console.WriteLine("2. 检查文件夹权限设置");
-        Console.WriteLine("3. 尝试将项目复制到其他位置再生成文档");
-    }
+    Console.WriteLine($"\n[💥 运行时崩溃] {ex.Message}");
+    Console.WriteLine(ex.StackTrace);
 }
+
+// Console.WriteLine("\n按任意键退出工具...");
+// Console.ReadKey();
