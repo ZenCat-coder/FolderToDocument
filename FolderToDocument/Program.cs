@@ -10,7 +10,7 @@ try
 {
     // 设置要扫描的项目文件夹路径
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoAppMallService";
-    string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument\FolderToDocument";
+    string folderPath = @"E:\MyCode\FolderToDocument";
 
     // 设置自定义输出路径
     string outputPath = "";
@@ -58,7 +58,7 @@ try
     Console.WriteLine();
 
     // 生成文档 - 传入包含模式
-    string finalOutputPath = await generator.GenerateDocumentAsync(folderPath, outputPath);
+    string finalOutputPath = await generator.GenerateDocumentAsync(folderPath, outputPath,includedPatterns);
 
     // 显示成功信息和使用说明
     Console.WriteLine();

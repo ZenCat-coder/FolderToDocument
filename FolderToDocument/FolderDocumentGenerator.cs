@@ -5,17 +5,8 @@ namespace FolderToDocument;
 
 public class FolderDocumentGenerator
 {
-    private readonly List<string> _excludedExtensions = new List<string>
-    {
-        ".exe", ".dll", ".pdb", ".bin", ".obj", ".cache", ".user", ".suo",
-        ".jpg", ".png", ".gif", ".ico", ".pdf", ".zip", ".rar", ".7z"
-    };
-
-    private readonly List<string> _excludedFolders = new List<string>
-    {
-        "bin", "obj", ".vs", ".git", "node_modules", "packages",
-        "Debug", "Release", ".idea", "dist", "build", "__pycache__", "Properties"
-    };
+    private readonly List<string> _excludedExtensions = new List<string> { ".exe", ".dll", ".pdb", ".bin", ".obj", ".cache", ".user", ".suo", ".jpg", ".png", ".gif", ".ico", ".pdf", ".zip", ".rar", ".7z" };
+    private readonly List<string> _excludedFolders = new List<string> { "bin", "obj", ".vs", ".git", "node_modules", "packages", "Debug", "Release", ".idea", "dist", "build", "__pycache__", "Properties" };
 
     private readonly List<(string pattern, string replacement)> _sensitivePatterns = new List<(string, string)>
     {
@@ -23,55 +14,51 @@ public class FolderDocumentGenerator
         (@"\b(?:AppKey|Secret|Password|Token)\s*=\s*[""']([^""']+)[""']", "Property=\"***\""),
     };
 
-    public async Task<string> GenerateDocumentAsync(string rootPath, string outputPath = null)
+    // 存储转换后的正则表达式
+    private List<Regex> _includeRegexes = new();
+
+    public async Task<string> GenerateDocumentAsync(string rootPath, string outputPath = null, List<string> includedPatterns = null)
     {
         if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath))
             throw new DirectoryNotFoundException($"目录不存在: {rootPath}");
 
-        // 1. 获取项目名
+        // 初始化包含规则
+        PrepareIncludeRegexes(includedPatterns);
+
         string projectName = Path.GetFileName(rootPath.TrimEnd(Path.DirectorySeparatorChar));
 
-        // 2. 【智能路径逻辑】：解决嵌套文件夹问题
         if (string.IsNullOrEmpty(outputPath))
         {
             DirectoryInfo currentInfo = new DirectoryInfo(rootPath);
             DirectoryInfo parentInfo = currentInfo.Parent;
-
-            // 如果当前目录名和父目录名一样（嵌套结构），再往上一层找真正的 Work/Review 空间
-            if (parentInfo != null && parentInfo.Name.Equals(projectName, StringComparison.OrdinalIgnoreCase))
-            {
-                parentInfo = parentInfo.Parent;
-            }
-
+            if (parentInfo != null && parentInfo.Name.Equals(projectName, StringComparison.OrdinalIgnoreCase)) parentInfo = parentInfo.Parent;
             string baseDir = parentInfo?.FullName ?? rootPath;
             outputPath = Path.Combine(baseDir, "Md", projectName, $"{projectName}.md");
         }
 
-        Console.WriteLine($"[开始] 准备生成文档...");
+        Console.WriteLine($"[开始] 准备生成文档 (包含模式: {(includedPatterns?.Count > 0 ? "已启用" : "全部包含")})");
         var sb = new StringBuilder();
 
-        // 3. 头部信息
+        // 头部信息
         sb.AppendLine($"# {projectName} 项目文档");
         sb.AppendLine();
         sb.AppendLine($"**生成时间**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"**项目路径**: {rootPath}");
-        sb.AppendLine($"**说明**: 本文档包含项目目录树及代码内容");
+        if (includedPatterns?.Count > 0) sb.AppendLine($"**筛选模式**: {string.Join(", ", includedPatterns)}");
         sb.AppendLine();
 
-        // 4. 【目录树生成】
-        Console.WriteLine("[目录树] 正在构建项目结构图...");
+        // 1. 目录树
         sb.AppendLine("## 1. 项目目录结构");
         sb.AppendLine("```text");
         sb.AppendLine($"{projectName}/");
-        BuildTreeRecursive(rootPath, "", sb);
+        BuildTreeRecursive(rootPath, rootPath, "", sb);
         sb.AppendLine("```");
         sb.AppendLine("\n---\n");
 
-        // 5. 【代码内容生成】
+        // 2. 代码内容
         sb.AppendLine("## 2. 详细代码内容");
         await ProcessDirectoryAsync(rootPath, rootPath, sb, 0);
 
-        // 6. 保存
         string outputDir = Path.GetDirectoryName(outputPath);
         if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
         await File.WriteAllTextAsync(outputPath, sb.ToString(), Encoding.UTF8);
@@ -79,7 +66,40 @@ public class FolderDocumentGenerator
         return outputPath;
     }
 
-    private void BuildTreeRecursive(string currentPath, string indent, StringBuilder sb)
+    // 将 glob 模式 (如 **/*.cs) 转换为 Regex
+    private void PrepareIncludeRegexes(List<string> patterns)
+    {
+        _includeRegexes = new List<Regex>();
+        if (patterns == null || patterns.Count == 0) return;
+
+        foreach (var pattern in patterns)
+        {
+            // 将通配符转换为正则表达式
+            string regexPattern = "^" + Regex.Escape(pattern)
+                .Replace(@"\*\*/", "(.+/)?")  // ** 匹配任意目录
+                .Replace(@"\*\*", ".*")        // ** 匹配任意字符
+                .Replace(@"\*", "[^/]*")       // * 匹配单层目录下的文件
+                .Replace(@"\?", ".") + "$";
+            
+            _includeRegexes.Add(new Regex(regexPattern, RegexOptions.IgnoreCase));
+        }
+    }
+
+    // 检查路径是否符合包含规则
+    private bool IsPathIncluded(string relativePath)
+    {
+        if (_includeRegexes.Count == 0) return true; // 如果没设规则，默认全包含
+        
+        // 统一路径分隔符为正斜杠，方便正则匹配
+        string normalizedPath = relativePath.Replace("\\", "/");
+        
+        // 如果是文件夹路径，检查规则是否涵盖了它的子项
+        return _includeRegexes.Any(re => re.IsMatch(normalizedPath) || 
+                                         normalizedPath.Split('/').Any(part => re.IsMatch(part)) ||
+                                         re.ToString().Contains(normalizedPath));
+    }
+
+    private void BuildTreeRecursive(string currentPath, string rootPath, string indent, StringBuilder sb)
     {
         var directories = Directory.GetDirectories(currentPath)
             .Where(d => !_excludedFolders.Contains(Path.GetFileName(d)))
@@ -89,7 +109,10 @@ public class FolderDocumentGenerator
             .Where(f => !_excludedExtensions.Contains(Path.GetExtension(f).ToLower()))
             .OrderBy(f => f).ToList();
 
-        var allItems = directories.Cast<string>().Concat(files.Cast<string>()).ToList();
+        // 过滤：只保留符合规则的项
+        var allItems = directories.Cast<string>().Concat(files.Cast<string>())
+            .Where(path => IsPathIncluded(GetRelativePath(path, rootPath)))
+            .ToList();
 
         for (int i = 0; i < allItems.Count; i++)
         {
@@ -107,27 +130,23 @@ public class FolderDocumentGenerator
             if (isDirectory)
             {
                 string nextIndent = indent + (isLast ? "    " : "│   ");
-                BuildTreeRecursive(item, nextIndent, sb);
+                BuildTreeRecursive(item, rootPath, nextIndent, sb);
             }
         }
     }
 
     private async Task ProcessDirectoryAsync(string currentPath, string rootPath, StringBuilder sb, int level)
     {
-        // 先处理当前文件夹下的文件
         var files = Directory.GetFiles(currentPath)
-            .Where(file => !_excludedExtensions.Contains(Path.GetExtension(file).ToLower()))
-            .OrderBy(file => file).ToList();
+            .Where(f => !_excludedExtensions.Contains(Path.GetExtension(f).ToLower()))
+            .Where(f => IsPathIncluded(GetRelativePath(f, rootPath))) // 过滤内容
+            .OrderBy(f => f).ToList();
 
         foreach (var file in files)
         {
-            string fileName = Path.GetFileName(file);
             string relPath = GetRelativePath(file, rootPath);
-            
-            // 在控制台显示进度
-            Console.WriteLine($"[文件] 正在写入: {relPath}");
-
-            sb.AppendLine($"### {fileName}");
+            Console.WriteLine($"[写入] {relPath}");
+            sb.AppendLine($"### {Path.GetFileName(file)}");
             sb.AppendLine($"**文件路径**: `{relPath}`");
             sb.AppendLine();
 
@@ -140,10 +159,9 @@ public class FolderDocumentGenerator
             sb.AppendLine("```\n");
         }
 
-        // 再递归子目录
         var directories = Directory.GetDirectories(currentPath)
-            .Where(dir => !_excludedFolders.Contains(Path.GetFileName(dir)))
-            .OrderBy(dir => dir).ToList();
+            .Where(d => !_excludedFolders.Contains(Path.GetFileName(d)))
+            .OrderBy(d => d).ToList();
 
         foreach (var directory in directories)
         {
@@ -151,10 +169,7 @@ public class FolderDocumentGenerator
         }
     }
 
-    private string GetRelativePath(string fullPath, string rootPath)
-    {
-        return Path.GetRelativePath(rootPath, fullPath);
-    }
+    private string GetRelativePath(string fullPath, string rootPath) => Path.GetRelativePath(rootPath, fullPath);
 
     private bool IsConfigFile(string filePath)
     {
