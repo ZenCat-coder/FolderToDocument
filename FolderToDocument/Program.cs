@@ -9,7 +9,8 @@ var generator = new FolderDocumentGenerator();
 try
 {
     // 设置要扫描的项目文件夹路径
-    string folderPath = @"E:\MyCode\C#\MyWork\ZYCsjOrderReceiptService";
+    //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoAppMallService";
+    string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument\FolderToDocument";
 
     // 设置自定义输出路径
     string outputPath = "";
@@ -17,9 +18,19 @@ try
     // 设置包含模式 - 使用更简单的模式
     var includedPatterns = new List<string>
     {
-        "ZYCsjOrderReceiptBusinessModule/**", // 包含整个业务模块
+        //"ZYRobberyStormGameModule/**", // 包含整个业务模块
+        //"ZYSigninModule/**",
+        //"ZYIdiomsSolitaireGamesModule/**"
+        //"ZYWireDefuserGameModule/**",
+        //"ZYAppMallBusinessModule/**"
+        //"ZYImageGuessIdiomModule/**"
+        //"ZYAgentAssistant/**"
+        //"ZYSlaveGameModule/**"
+        //"ZYFishingGameModule/**",
+        //"ZYEventModule/**"
+        "FolderToDocument/**"
     };
-
+    
     //  示例2：包含业务模块和项目结构文件
     // var includedPatterns = new List<string>
     // {
@@ -43,11 +54,11 @@ try
     Console.WriteLine($"[项目] 项目名称: {projectName}");
     Console.WriteLine($"[路径] 项目路径: {folderPath}");
     Console.WriteLine($"[输出] 输出路径: {outputPath}");
-    Console.WriteLine($"[过滤] 包含模式: {string.Join(", ", includedPatterns)}");
+    //Console.WriteLine($"[过滤] 包含模式: {string.Join(", ", includedPatterns)}");
     Console.WriteLine();
 
     // 生成文档 - 传入包含模式
-    string finalOutputPath = await generator.GenerateDocumentAsync(folderPath, outputPath, includedPatterns);
+    string finalOutputPath = await generator.GenerateDocumentAsync(folderPath, outputPath);
 
     // 显示成功信息和使用说明
     Console.WriteLine();
