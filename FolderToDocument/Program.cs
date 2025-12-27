@@ -8,19 +8,24 @@ var generator = new FolderDocumentGenerator();
 try
 {
     // 1. 配置：输入你需要扫描的项目路径
-    string folderPath = @"E:\MyCode\FolderToDocument";
+    // string folderPath = @"E:\MyCode\FolderToDocument";
     //string folderPath = @"E:\MyScript\ZenlessZoneZero";
+    string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoGroupGame";
+    //string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
+
 
     // 2. 配置：包含模式（推荐只包含主模块，防止 Token 溢出）
     var includedPatterns = new List<string>
     {
-        "FolderToDocument/**",
+        //"ZYImageGuessIdiomModule/**",
         // "Scripts/**",
         // "Infrastructure/**",
         // "ZenlessZoneZero/**",
+        //"FolderToDocument/**",
+        "ZYWireDefuserGameModule/**",
         "*.sln",
         "global.json",
-        ".gitignore"
+        //".gitignore"
     };
 
     // 路径合法性校验
@@ -34,23 +39,23 @@ try
     Console.WriteLine($"[任务] 分析项目: {projectName}");
     Console.WriteLine($"[模式] 包含规则: {string.Join(", ", includedPatterns)}");
     Console.WriteLine();
-    
+
     // 默认输出至: 你的工作目录/Md/项目名/项目名.md
     // 3. 配置：自定义 AI 专项要求 (这些会直接出现在 MD 文件的头部指令中)
-    var myRequirements = new List<string> 
+    var myRequirements = new List<string>
     {
-        "请确保所有修改都严格遵循生成的 Markdown 模板格式。", 
-        "目前我这个模板还可以怎么优化。主要用途是给ai修代码，优化用" 
+        "请确保所有修改都严格遵循生成的 Markdown 模板格式。",
+        "代码已通过后台预处理移除注释，请基于清理后的逻辑进行审计。",
     };
-    
+
     // 4. 执行生成
     // 传入模式 (optimize 或 debug) 以及自定义要求
     string finalPath = await generator.GenerateDocumentAsync(
-        folderPath, 
-        null, 
-        includedPatterns, 
-        taskMode: "optimize", 
-        customRequirements: myRequirements // <--- Optimization
+        folderPath,
+        null,
+        includedPatterns,
+        taskMode: "optimize",
+        customRequirements: myRequirements
     );
 
     // 4. 结果反馈
