@@ -1,12 +1,13 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace FolderToDocument;
 
 /// <summary>
 /// 文件夹文档生成器核心类。
 /// </summary>
-public class FolderDocumentGenerator
+public partial class FolderDocumentGenerator
 {
     private HashSet<string> ExcludedExtensions { get; } = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -18,6 +19,12 @@ public class FolderDocumentGenerator
     {
         "bin", "obj", ".vs", ".git", "node_modules", "packages",
         "Debug", "Release", ".idea", "dist", "build", "__pycache__", "Properties"
+    };
+    
+    private static readonly EnumerationOptions DefaultEnumOptions = new()
+    {
+        MatchCasing = MatchCasing.CaseInsensitive,
+        RecurseSubdirectories = false
     };
 
     // 脱敏正则：保护隐私信息
@@ -75,8 +82,8 @@ public class FolderDocumentGenerator
         await using var sw = new StreamWriter(outputPath, false, Encoding.UTF8);
 
         await sw.WriteLineAsync("<TaskDefinition>");
-        
-        // <--- 原因: 根据 taskMode 切换角色，初学者模式需要更具教学性质的角色
+
+
         if (taskMode == "explain")
         {
             await sw.WriteLineAsync("## ROLE: Senior Technical Educator");
@@ -94,12 +101,13 @@ public class FolderDocumentGenerator
         await sw.WriteLineAsync("- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
         await sw.WriteLineAsync("- STEP_4: Confirm that the solution strictly follows .NET 8 best practices.");
 
-        // <--- 原因: 新增 explain 模式的指令集，重点在于逻辑流程解释而非性能优化
+
         if (taskMode == "debug")
         {
             await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
             await sw.WriteLineAsync("- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
             await sw.WriteLineAsync("- TASK_2: Provide a thread-safe, memory-efficient fix.");
+            await sw.WriteLineAsync("- TASK_3: Explain why the previous logic failed.");
         }
         else if (taskMode == "explain")
         {
@@ -133,9 +141,10 @@ public class FolderDocumentGenerator
         await sw.WriteLineAsync("- RULE_5: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
         await sw.WriteLineAsync("- RULE_6: If a method has NO changes, DO NOT output it. Only output modified methods/logic blocks.");
         await sw.WriteLineAsync("- RULE_7: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
-        await sw.WriteLineAsync("- RULE_8: (Debug Only) Explain why the previous logic failed.");
-        await sw.WriteLineAsync("- RULE_9: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
-        await sw.WriteLineAsync("- RULE_10: You MUST answer in Chinese.");
+        await sw.WriteLineAsync("- RULE_8: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
+        await sw.WriteLineAsync("- RULE_9: You MUST answer in Chinese.");
+        // <--- 原因: 新增 RULE_10，强制要求生成的代码必须包含 XML 文档注释 (/// <summary>)，以便于代码维护和理解。
+        await sw.WriteLineAsync("- RULE_10: You MUST add XML documentation comments (/// <summary>) for any NEW or MODIFIED methods.");
         await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
 
         await sw.WriteLineAsync($"# {projectName} 项目文档");
@@ -151,7 +160,7 @@ public class FolderDocumentGenerator
         await sw.WriteLineAsync("```\n---\n");
 
         Console.WriteLine("[3/5] 正在处理源码并标注行号...");
-        // <--- 原因: 传递 taskMode 到底层处理函数，以便区分是否保留注释
+
         var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode);
 
         await sw.WriteLineAsync("\n<ImportantReminder>");
@@ -169,11 +178,8 @@ public class FolderDocumentGenerator
     }
 
     /// <summary>
-    /// 解析项目元数据（Framework 版本及依赖包）。
-    /// 优化点：增强了对多框架项目 (TargetFrameworks) 及包版本属性的提取稳定性。
+    /// 解析项目元数据，提取 .csproj 中的框架和依赖信息。
     /// </summary>
-    /// <param name="rootPath">项目根路径</param>
-    /// <returns>项目元数据 Markdown 片段</returns>
     private async Task<string> GetProjectMetadataAsync(string rootPath)
     {
         if (string.IsNullOrEmpty(rootPath)) return string.Empty;
@@ -195,26 +201,35 @@ public class FolderDocumentGenerator
                 found = true;
             }
 
-            string content = await File.ReadAllTextAsync(file);
-
-            // 增强正则：同时兼容 TargetFramework 和 TargetFrameworks 标签 // <--- 原因: 适应 .NET 现代项目的多目标框架配置
-            var frameworkMatch = Regex.Match(content,
-                @"<(?:TargetFramework|TargetFrameworks)\b[^>]*>(?<fw>.*?)</(?:TargetFramework|TargetFrameworks)>",
-                RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-            string framework = frameworkMatch.Groups["fw"].Value;
-            sb.AppendLine($"  - **{Path.GetFileName(file)}** (Framework: `{framework}`)");
-
-            // 增强正则：支持 PackageReference 属性分布在多行或使用双引号/单引号的情形 // <--- 原因: 提高对不同代码格式风格的兼容性
-            var packages = Regex.Matches(content,
-                @"<PackageReference\s+[^>]*Include=[""'](?<name>.*?)[""'](?:\s+Version=[""'](?<ver>.*?)[""'])?",
-                RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-            foreach (Match p in packages)
+            try
             {
-                string name = p.Groups["name"].Value;
-                string ver = p.Groups["ver"].Success ? p.Groups["ver"].Value : "Latest";
-                sb.AppendLine($"    - `{name}` (v{ver})");
+                // [Modified] 使用异步流式加载，比 ReadAllText 更节省内存
+                await using var stream = File.OpenRead(file);
+                var doc = await XDocument.LoadAsync(stream, LoadOptions.None, CancellationToken.None);
+
+                var projectElement = doc.Element("Project");
+                // 查找 TargetFramework 或 TargetFrameworks
+                var framework = doc.Descendants("TargetFramework").FirstOrDefault()?.Value
+                                ?? doc.Descendants("TargetFrameworks").FirstOrDefault()?.Value
+                                ?? "Unknown Framework";
+
+                sb.AppendLine($"  - **{Path.GetFileName(file)}** (Framework: `{framework}`)");
+
+                var packages = doc.Descendants("PackageReference");
+                foreach (var p in packages)
+                {
+                    var name = p.Attribute("Include")?.Value;
+                    var ver = p.Attribute("Version")?.Value ?? "Latest";
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        sb.AppendLine($"    - `{name}` (v{ver})");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 容错处理：如果 XML 格式错误，记录警告但不中断流程
+                sb.AppendLine($"  - **{Path.GetFileName(file)}** (Error parsing: {ex.Message})");
             }
         }
 
@@ -294,25 +309,17 @@ public class FolderDocumentGenerator
     }
 
     /// <summary>
-    /// 异步递归构建视觉化目录树，确保在处理大型文件系统时不阻塞线程池。
+    /// 递归构建文件目录树。
     /// </summary>
-    /// <param name="currentPath">当前遍历路径</param>
-    /// <param name="rootPath">根路径</param>
-    /// <param name="indent">缩进字符串</param>
-    /// <param name="tw">输出流</param>
-    /// <param name="includeRegexes">包含规则</param>
-    /// <returns>异步任务</returns>
     private async Task BuildTreeRecursiveAsync(string currentPath, string rootPath, string indent, TextWriter tw,
         List<(Regex Regex, string Pattern)> includeRegexes)
     {
-        var enumerationOptions = new EnumerationOptions
-            { MatchCasing = MatchCasing.CaseInsensitive, RecurseSubdirectories = false };
-
-        var dirs = Directory.EnumerateDirectories(currentPath, "*", enumerationOptions)
+        // [Modified] 使用静态 DefaultEnumOptions
+        var dirs = Directory.EnumerateDirectories(currentPath, "*", DefaultEnumOptions)
             .Where(d => !ExcludedFolders.Contains(Path.GetFileName(d)))
             .OrderBy(d => d).ToList();
 
-        var files = Directory.EnumerateFiles(currentPath, "*", enumerationOptions)
+        var files = Directory.EnumerateFiles(currentPath, "*", DefaultEnumOptions)
             .Where(f => !ExcludedExtensions.Contains(Path.GetExtension(f).ToLower()))
             .OrderBy(f => f).ToList();
 
@@ -334,12 +341,10 @@ public class FolderDocumentGenerator
                     ? " [Entry Point]"
                     : "";
 
-                // 修改为异步写入，保持 IO 管道的一致性 // <--- 原因
                 await tw.WriteLineAsync($"{indent}{(isLast ? "└── " : "├── ")}{name}{(item.IsDir ? "/" : "")}{marker}");
 
                 if (item.IsDir)
                 {
-                    // 递归调用同步转异步 // <--- 原因
                     await BuildTreeRecursiveAsync(item.Path, rootPath, indent + (isLast ? "    " : "│   "), tw,
                         includeRegexes);
                 }
@@ -359,23 +364,16 @@ public class FolderDocumentGenerator
     private record ProjectStats(int FileCount, long LineCount);
 
     /// <summary>
-    /// 递归处理目录并提取源码内容，支持流式脱敏与统计
+    /// 处理目录并统计代码行数，同时写入文件内容。
     /// </summary>
-    /// <param name="currentPath">当前路径</param>
-    /// <param name="rootPath">项目根路径</param>
-    /// <param name="tw">输出流写入器</param>
-    /// <param name="includeRegexes">预编译的过滤规则</param>
-    /// <returns>项目统计数据（文件数、行数）</returns>
     private async Task<ProjectStats> ProcessDirectoryWithStatsAsync(string currentPath, string rootPath, TextWriter tw,
         List<(Regex Regex, string Pattern)> includeRegexes, string taskMode)
     {
         int fileCount = 0;
         long totalLines = 0;
 
-        var enumOptions = new EnumerationOptions
-            { MatchCasing = MatchCasing.CaseInsensitive, RecurseSubdirectories = false };
-
-        var files = Directory.EnumerateFiles(currentPath, "*", enumOptions)
+        // [Modified] 使用静态 DefaultEnumOptions
+        var files = Directory.EnumerateFiles(currentPath, "*", DefaultEnumOptions)
             .Where(f => !ExcludedExtensions.Contains(Path.GetExtension(f).ToLower()))
             .Where(path => IsPathIncluded(GetRelativePath(path, rootPath), includeRegexes, false))
             .OrderBy(f => f);
@@ -396,7 +394,6 @@ public class FolderDocumentGenerator
                     content = SanitizeSensitiveInfo(content);
                 }
 
-                // <--- 原因: 对于初学者模式，保留注释是极好的学习资源。如果是优化或Debug模式，则清理注释以节省 Token。
                 if (taskMode != "explain")
                 {
                     content = StripComments(content, extension);
@@ -427,7 +424,7 @@ public class FolderDocumentGenerator
             }
         }
 
-        var directories = Directory.EnumerateDirectories(currentPath, "*", enumOptions)
+        var directories = Directory.EnumerateDirectories(currentPath, "*", DefaultEnumOptions)
             .Where(d => !ExcludedFolders.Contains(Path.GetFileName(d)))
             .OrderBy(d => d);
 
@@ -435,7 +432,6 @@ public class FolderDocumentGenerator
         {
             if (IsPathIncluded(GetRelativePath(directory, rootPath), includeRegexes, true))
             {
-                // <--- 原因: 递归调用时继续传递 taskMode
                 var subStats = await ProcessDirectoryWithStatsAsync(directory, rootPath, tw, includeRegexes, taskMode);
                 fileCount += subStats.FileCount;
                 totalLines += subStats.LineCount;
@@ -446,28 +442,32 @@ public class FolderDocumentGenerator
     }
 
     /// <summary>
-    /// 清理源码中的注释，并保持行号对齐。
+    /// 去除代码中的注释（支持 C#, JS, TS, JSON）。
     /// </summary>
-    /// <param name="content">原始内容</param>
-    /// <param name="extension">扩展名</param>
-    /// <returns>清理后的内容</returns>
+
     private string StripComments(string content, string extension)
     {
         if (extension != ".cs" && extension != ".js" && extension != ".ts" && extension != ".json")
             return content;
 
-        // 通过正则捕获组 1 保护字符串内容，防止误删 URL 中的 //
-        string pattern = @"(@""(?:[^""]|"""")*""|""(?:\\.|[^\\""])*""|'(?:\\.|[^\\'])*')|//.*|/\*[\s\S]*?\*/";
-
-        return Regex.Replace(content, pattern, m =>
+        // [Modified] 调用编译时生成的正则方法
+        return CommentStripRegex().Replace(content, m =>
         {
+            // 如果是字符串字面量，保留原样
             if (m.Groups[1].Success) return m.Groups[1].Value;
 
-            // 将非换行符替换为空白，从而保持行号逻辑绝对一致 // <--- 原因：确保清理后的代码行号与源码文件 100% 同步，这是 AI 准确定位的基石
-            return Regex.Replace(m.Value, @"[^\r\n]", "");
-        }, RegexOptions.Compiled | RegexOptions.Multiline);
+            // [Modified] 仅保留换行符以保持行号一致，使用 LINQ 替代内部 Regex，减少分配
+            // 原逻辑: return Regex.Replace(m.Value, @"[^\r\n]", "");
+            return string.Concat(m.Value.Where(c => c == '\r' || c == '\n'));
+        });
     }
 
+    /// <summary>
+    /// 使用 Source Generator 在编译时生成正则表达式，避免运行时解析开销。
+    /// </summary>
+    [GeneratedRegex(@"(@""(?:[^""]|"""")*""|""(?:\\.|[^\\""])*""|'(?:\\.|[^\\'])*')|//.*|/\*[\s\S]*?\*/", RegexOptions.Multiline)]
+    private static partial Regex CommentStripRegex();
+    
     private string GetRelativePath(string fullPath, string rootPath) => Path.GetRelativePath(rootPath, fullPath);
 
     /// <summary>
