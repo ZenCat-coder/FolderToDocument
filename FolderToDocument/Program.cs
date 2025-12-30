@@ -10,22 +10,22 @@ try
     // 1. 配置：输入你需要扫描的项目路径
     // string folderPath = @"E:\MyCode\FolderToDocument";
     //string folderPath = @"E:\MyScript\ZenlessZoneZero";
-    string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoGroupGame";
-    //string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
+    //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoGroupGame";
+    string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
 
 
     // 2. 配置：包含模式（推荐只包含主模块，防止 Token 溢出）
     var includedPatterns = new List<string>
     {
+        //"ZYIdiomsSolitaireGamesModule/**",
         //"ZYImageGuessIdiomModule/**",
-        // "Scripts/**",
-        // "Infrastructure/**",
-        // "ZenlessZoneZero/**",
-        //"FolderToDocument/**",
-        "ZYWireDefuserGameModule/**",
-        "*.sln",
-        "global.json",
-        //".gitignore"
+        "FolderToDocument/**",
+        //"ZYFishingGameModule/**",
+        //"ZYBasisBusinessModule/**",
+        //"ZYWireDefuserGameModule/**",
+        //"ZYUndercoverGameModule/**",
+        //"*.sln",
+        //"global.json",
     };
 
     // 路径合法性校验
@@ -44,12 +44,11 @@ try
     // 3. 配置：自定义 AI 专项要求 (这些会直接出现在 MD 文件的头部指令中)
     var myRequirements = new List<string>
     {
-        "请确保所有修改都严格遵循生成的 Markdown 模板格式。",
-        "代码已通过后台预处理移除注释，请基于清理后的逻辑进行审计。",
+        "能否再优化一下，让解释更详细一点。比如"
     };
 
     // 4. 执行生成
-    // 传入模式 (optimize 或 debug) 以及自定义要求
+    // 传入模式 (optimize 、explain 或 debug) 以及自定义要求
     string finalPath = await generator.GenerateDocumentAsync(
         folderPath,
         null,

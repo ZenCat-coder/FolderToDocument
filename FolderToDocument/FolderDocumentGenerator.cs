@@ -75,24 +75,38 @@ public class FolderDocumentGenerator
         await using var sw = new StreamWriter(outputPath, false, Encoding.UTF8);
 
         await sw.WriteLineAsync("<TaskDefinition>");
-        await sw.WriteLineAsync("## ROLE: Senior Software Architect");
-        await sw.WriteLineAsync(
-            "## EXPERTISE: .NET 8, High-Performance Systems, Secure Coding, Clean Architecture");
+        
+        // <--- 原因: 根据 taskMode 切换角色，初学者模式需要更具教学性质的角色
+        if (taskMode == "explain")
+        {
+            await sw.WriteLineAsync("## ROLE: Senior Technical Educator");
+            await sw.WriteLineAsync("## EXPERTISE: C# Programming, Logic Explanation, Software Engineering Fundamentals");
+        }
+        else
+        {
+            await sw.WriteLineAsync("## ROLE: Senior Software Architect");
+            await sw.WriteLineAsync("## EXPERTISE: .NET 8, High-Performance Systems, Secure Coding, Clean Architecture");
+        }
+
         await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
-        await sw.WriteLineAsync(
-            "- STEP_1: Identify all potential side effects of the proposed change on existing logic.");
-        await sw.WriteLineAsync(
-            "- STEP_2: Verify if any method signatures are changed (avoid breaking API compatibility).");
-        await sw.WriteLineAsync(
-            "- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
+        await sw.WriteLineAsync("- STEP_1: Identify all potential side effects of the proposed change on existing logic.");
+        await sw.WriteLineAsync("- STEP_2: Verify if any method signatures are changed (avoid breaking API compatibility).");
+        await sw.WriteLineAsync("- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
         await sw.WriteLineAsync("- STEP_4: Confirm that the solution strictly follows .NET 8 best practices.");
 
+        // <--- 原因: 新增 explain 模式的指令集，重点在于逻辑流程解释而非性能优化
         if (taskMode == "debug")
         {
             await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
-            await sw.WriteLineAsync(
-                "- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
+            await sw.WriteLineAsync("- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
             await sw.WriteLineAsync("- TASK_2: Provide a thread-safe, memory-efficient fix.");
+        }
+        else if (taskMode == "explain")
+        {
+            await sw.WriteLineAsync("## MODE: BEGINNER_CODE_WALKTHROUGH");
+            await sw.WriteLineAsync("- TASK_1: Explain the high-level workflow of the code in simple terms.");
+            await sw.WriteLineAsync("- TASK_2: Break down complex methods and explain the purpose of key variables.");
+            await sw.WriteLineAsync("- TASK_3: Highlight common C# patterns used (e.g., async/await, Linq).");
         }
         else
         {
@@ -105,49 +119,30 @@ public class FolderDocumentGenerator
         await sw.WriteLineAsync("- TASK_4: Ensure NO additional external dependencies are introduced.");
         await sw.WriteLineAsync("</TaskDefinition>\n");
 
-
         if (customRequirements is { Count: > 0 })
         {
             await sw.WriteLineAsync("> 3. **专项要求**：");
             foreach (var req in customRequirements) await sw.WriteLineAsync($">    - {req}");
         }
 
-
         await sw.WriteLineAsync("<OutputStrictConstraint>");
         await sw.WriteLineAsync("- RULE_1: You MUST output using the following Markdown format for EVERY change.");
-
-
-        await sw.WriteLineAsync(
-            "- RULE_2: You MUST provide the ENTIRE method or logic block. DO NOT use snippets (e.g., `...`) or partial updates.");
-
+        await sw.WriteLineAsync("- RULE_2: You MUST provide the ENTIRE method or logic block. DO NOT use snippets (e.g., `...`) or partial updates.");
         await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
-
-
-        await sw.WriteLineAsync(
-            "- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
-
-        await sw.WriteLineAsync(
-            "- RULE_5: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
-
-        await sw.WriteLineAsync(
-            "- RULE_6: If a method has NO changes, DO NOT output it. Only output modified methods/logic blocks."); // <--- 原因: 用户要求：如果某个方法没有任何改动，则不需要显示
-
-        await sw.WriteLineAsync(
-            "- RULE_7: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
+        await sw.WriteLineAsync("- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
+        await sw.WriteLineAsync("- RULE_5: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
+        await sw.WriteLineAsync("- RULE_6: If a method has NO changes, DO NOT output it. Only output modified methods/logic blocks.");
+        await sw.WriteLineAsync("- RULE_7: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
         await sw.WriteLineAsync("- RULE_8: (Debug Only) Explain why the previous logic failed.");
-        await sw.WriteLineAsync(
-            "- RULE_9: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
-        
-        await sw.WriteLineAsync("- RULE_10: You MUST answer in Chinese."); // <--- 原因: 用户要求：回答的时候用中文回答
+        await sw.WriteLineAsync("- RULE_9: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
+        await sw.WriteLineAsync("- RULE_10: You MUST answer in Chinese.");
         await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
-
 
         await sw.WriteLineAsync($"# {projectName} 项目文档");
         await sw.WriteLineAsync($"> 生成时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         await sw.WriteLineAsync($"- **项目根目录**: `{rootPath}`");
         await sw.WriteAsync(projectMetadata);
         await sw.WriteLineAsync();
-
 
         Console.WriteLine("[2/5] 正在构建目录树...");
         await sw.WriteLineAsync("## 1. 项目目录结构\n```text");
@@ -156,19 +151,18 @@ public class FolderDocumentGenerator
         await sw.WriteLineAsync("```\n---\n");
 
         Console.WriteLine("[3/5] 正在处理源码并标注行号...");
-        var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes);
-
+        // <--- 原因: 传递 taskMode 到底层处理函数，以便区分是否保留注释
+        var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode);
 
         await sw.WriteLineAsync("\n<ImportantReminder>");
         await sw.WriteLineAsync("System Context Loaded. Current project uses .NET 8 SDK.");
         await sw.WriteLineAsync("Immediate Action: Execute audit and categorize findings per RULE_9.");
         await sw.WriteLineAsync("</ImportantReminder>\n\n---");
 
-        await sw.WriteLineAsync("## 3. 项目规模与统计");
+        await sw.WriteLineAsync("## 3. 项目规模 with 统计");
         await sw.WriteLineAsync($"- **文件总数**: {stats.FileCount}");
         await sw.WriteLineAsync($"- **代码总行数**: {stats.LineCount}");
         await sw.WriteLineAsync($"- **安全状态**: 已自动执行正则脱敏");
-
 
         Console.WriteLine($"[5/5] 文档生成成功！");
         return outputPath;
@@ -373,7 +367,7 @@ public class FolderDocumentGenerator
     /// <param name="includeRegexes">预编译的过滤规则</param>
     /// <returns>项目统计数据（文件数、行数）</returns>
     private async Task<ProjectStats> ProcessDirectoryWithStatsAsync(string currentPath, string rootPath, TextWriter tw,
-        List<(Regex Regex, string Pattern)> includeRegexes)
+        List<(Regex Regex, string Pattern)> includeRegexes, string taskMode)
     {
         int fileCount = 0;
         long totalLines = 0;
@@ -381,7 +375,6 @@ public class FolderDocumentGenerator
         var enumOptions = new EnumerationOptions
             { MatchCasing = MatchCasing.CaseInsensitive, RecurseSubdirectories = false };
 
-        // 1. 处理当前文件夹下的所有文件
         var files = Directory.EnumerateFiles(currentPath, "*", enumOptions)
             .Where(f => !ExcludedExtensions.Contains(Path.GetExtension(f).ToLower()))
             .Where(path => IsPathIncluded(GetRelativePath(path, rootPath), includeRegexes, false))
@@ -392,31 +385,30 @@ public class FolderDocumentGenerator
             string relPath = GetRelativePath(file, rootPath);
             string extension = Path.GetExtension(file).ToLowerInvariant();
 
-            await tw.WriteLineAsync($"\n[FILE: {relPath}]"); // <--- 原因：增强文档可读性，确保文件间有空行
+            await tw.WriteLineAsync($"\n[FILE: {relPath}]");
 
             try
             {
-                // 注意：对于 .NET 8，保持处理逻辑的原子性，先读取内容
                 string content = await File.ReadAllTextAsync(file);
 
-                // 根据规则链式处理源码
                 if (IsConfigFile(file))
                 {
                     content = SanitizeSensitiveInfo(content);
                 }
 
-                content = StripComments(content, extension);
+                // <--- 原因: 对于初学者模式，保留注释是极好的学习资源。如果是优化或Debug模式，则清理注释以节省 Token。
+                if (taskMode != "explain")
+                {
+                    content = StripComments(content, extension);
+                }
 
-                // 确定 Markdown 围栏符号
                 string fence = content.Contains("```") ? "~~~~" : "```";
                 await tw.WriteLineAsync($"{fence}{GetFileExtension(file)}");
 
-                // 使用 StringReader 逐行处理，减少行处理时的内存碎片
                 using var reader = new StringReader(content);
                 int currentFileLine = 1;
                 while (await reader.ReadLineAsync() is { } line)
                 {
-                    // <--- 原因：手动构建行号字符串，避免频繁使用 Interpolated Strings 在大循环中产生的分配
                     await tw.WriteAsync(currentFileLine.ToString());
                     await tw.WriteAsync("|");
                     await tw.WriteLineAsync(line.TrimEnd());
@@ -435,7 +427,6 @@ public class FolderDocumentGenerator
             }
         }
 
-        // 2. 递归处理子目录
         var directories = Directory.EnumerateDirectories(currentPath, "*", enumOptions)
             .Where(d => !ExcludedFolders.Contains(Path.GetFileName(d)))
             .OrderBy(d => d);
@@ -444,7 +435,8 @@ public class FolderDocumentGenerator
         {
             if (IsPathIncluded(GetRelativePath(directory, rootPath), includeRegexes, true))
             {
-                var subStats = await ProcessDirectoryWithStatsAsync(directory, rootPath, tw, includeRegexes);
+                // <--- 原因: 递归调用时继续传递 taskMode
+                var subStats = await ProcessDirectoryWithStatsAsync(directory, rootPath, tw, includeRegexes, taskMode);
                 fileCount += subStats.FileCount;
                 totalLines += subStats.LineCount;
             }
