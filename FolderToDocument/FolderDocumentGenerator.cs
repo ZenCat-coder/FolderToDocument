@@ -47,16 +47,13 @@ public class FolderDocumentGenerator
         List<string> includedPatterns = null, string taskMode = "optimize",
         List<string> customRequirements = null)
     {
-        // 1. 参数校验与路径标准化
-        ArgumentNullException.ThrowIfNull(rootPath); // <--- 原因：使用 .NET 8 现代参数检查语法
+        ArgumentNullException.ThrowIfNull(rootPath);
 
         if (!Directory.Exists(rootPath))
             throw new DirectoryNotFoundException($"Source directory not found: {rootPath}");
 
-        // 2. 初始化过滤规则（如果失败，尽早抛出带详细信息的异常）
-        List<(Regex Regex, string Pattern)> currentRegexes = PrepareIncludeRegexes(includedPatterns);
+        var currentRegexes = PrepareIncludeRegexes(includedPatterns);
 
-        // 3. 确定项目名称与输出路径逻辑
         string projectName = Path.GetFileName(rootPath.TrimEnd(Path.DirectorySeparatorChar)) ?? "Project";
 
         if (string.IsNullOrEmpty(outputPath))
@@ -75,92 +72,103 @@ public class FolderDocumentGenerator
         Console.WriteLine($"[1/5] 正在解析项目元数据...");
         string projectMetadata = await GetProjectMetadataAsync(rootPath);
 
-        // 4. 开始流式写入 Markdown
-        await using (var sw = new StreamWriter(outputPath, false, Encoding.UTF8))
+        await using var sw = new StreamWriter(outputPath, false, Encoding.UTF8);
+
+        await sw.WriteLineAsync("<TaskDefinition>");
+        await sw.WriteLineAsync("## ROLE: Senior Software Architect");
+        await sw.WriteLineAsync(
+            "## EXPERTISE: .NET 8, High-Performance Systems, Secure Coding, Clean Architecture");
+        await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
+        await sw.WriteLineAsync(
+            "- STEP_1: Identify all potential side effects of the proposed change on existing logic.");
+        await sw.WriteLineAsync(
+            "- STEP_2: Verify if any method signatures are changed (avoid breaking API compatibility).");
+        await sw.WriteLineAsync(
+            "- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
+        await sw.WriteLineAsync("- STEP_4: Confirm that the solution strictly follows .NET 8 best practices.");
+
+        if (taskMode == "debug")
         {
-            // 写入 TaskDefinition
-            await sw.WriteLineAsync("<TaskDefinition>");
-            await sw.WriteLineAsync("## ROLE: Senior Software Architect");
+            await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
             await sw.WriteLineAsync(
-                "## EXPERTISE: .NET 8, High-Performance Systems, Secure Coding, Clean Architecture");
-            await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
-            await sw.WriteLineAsync(
-                "- STEP_1: Identify all potential side effects of the proposed change on existing logic.");
-            await sw.WriteLineAsync(
-                "- STEP_2: Verify if any method signatures are changed (avoid breaking API compatibility).");
-            await sw.WriteLineAsync(
-                "- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
-            await sw.WriteLineAsync("- STEP_4: Confirm that the solution strictly follows .NET 8 best practices.");
-
-            if (taskMode == "debug")
-            {
-                await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
-                await sw.WriteLineAsync(
-                    "- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
-                await sw.WriteLineAsync("- TASK_2: Provide a thread-safe, memory-efficient fix.");
-            }
-            else
-            {
-                await sw.WriteLineAsync("## MODE: CODE_OPTIMIZATION_REVIEW");
-                await sw.WriteLineAsync("- TASK_1: Audit code for concurrency safety and memory leaks.");
-                await sw.WriteLineAsync("- TASK_2: Refactor for performance using Span/ArrayPool.");
-                await sw.WriteLineAsync("- TASK_3: Ensure SOLID principles.");
-            }
-
-            await sw.WriteLineAsync("- TASK_4: Ensure NO additional external dependencies are introduced.");
-            await sw.WriteLineAsync("</TaskDefinition>\n");
-
-            // 写入专项要求
-            if (customRequirements is { Count: > 0 })
-            {
-                await sw.WriteLineAsync("> 3. **专项要求**：");
-                foreach (var req in customRequirements) await sw.WriteLineAsync($">    - {req}");
-            }
-
-            // 写入输出约束规则
-            await sw.WriteLineAsync("<OutputStrictConstraint>");
-            await sw.WriteLineAsync("- RULE_1: You MUST output using the following Markdown format for EVERY change.");
-            await sw.WriteLineAsync(
-                "- RULE_2: You MUST provide the ENTIRE method or logic block to ensure code integrity.");
-            await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
-            await sw.WriteLineAsync(
-                "- RULE_4: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
-            await sw.WriteLineAsync(
-                "- RULE_5: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
-            await sw.WriteLineAsync("- RULE_6: Every modified method MUST include C# XML Documentation Comments.");
-            await sw.WriteLineAsync("- RULE_7: (Debug Only) Explain why the previous logic failed.");
-            await sw.WriteLineAsync(
-                "- RULE_8: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
-            await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
-
-            // 写入项目标题
-            await sw.WriteLineAsync($"# {projectName} 项目文档");
-            await sw.WriteLineAsync($"> 生成时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            await sw.WriteLineAsync($"- **项目根目录**: `{rootPath}`");
-            await sw.WriteAsync(projectMetadata);
-            await sw.WriteLineAsync();
-
-            // 5. 生成目录树与源码内容
-            Console.WriteLine("[2/5] 正在构建目录树...");
-            await sw.WriteLineAsync("## 1. 项目目录结构\n```text");
-            await sw.WriteLineAsync($"{projectName}/");
-            await BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes);
-            await sw.WriteLineAsync("```\n---\n");
-
-            Console.WriteLine("[3/5] 正在处理源码并标注行号...");
-            var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes);
-
-            // 6. 写入收尾统计与提醒
-            await sw.WriteLineAsync("\n<ImportantReminder>");
-            await sw.WriteLineAsync("System Context Loaded. Current project uses .NET 8 SDK.");
-            await sw.WriteLineAsync("Immediate Action: Execute audit and categorize findings per RULE_8.");
-            await sw.WriteLineAsync("</ImportantReminder>\n\n---");
-
-            await sw.WriteLineAsync("## 3. 项目规模与统计");
-            await sw.WriteLineAsync($"- **文件总数**: {stats.FileCount}");
-            await sw.WriteLineAsync($"- **代码总行数**: {stats.LineCount}");
-            await sw.WriteLineAsync($"- **安全状态**: 已自动执行正则脱敏");
+                "- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
+            await sw.WriteLineAsync("- TASK_2: Provide a thread-safe, memory-efficient fix.");
         }
+        else
+        {
+            await sw.WriteLineAsync("## MODE: CODE_OPTIMIZATION_REVIEW");
+            await sw.WriteLineAsync("- TASK_1: Audit code for concurrency safety and memory leaks.");
+            await sw.WriteLineAsync("- TASK_2: Refactor for performance using Span/ArrayPool.");
+            await sw.WriteLineAsync("- TASK_3: Ensure SOLID principles.");
+        }
+
+        await sw.WriteLineAsync("- TASK_4: Ensure NO additional external dependencies are introduced.");
+        await sw.WriteLineAsync("</TaskDefinition>\n");
+
+
+        if (customRequirements is { Count: > 0 })
+        {
+            await sw.WriteLineAsync("> 3. **专项要求**：");
+            foreach (var req in customRequirements) await sw.WriteLineAsync($">    - {req}");
+        }
+
+
+        await sw.WriteLineAsync("<OutputStrictConstraint>");
+        await sw.WriteLineAsync("- RULE_1: You MUST output using the following Markdown format for EVERY change.");
+
+
+        await sw.WriteLineAsync(
+            "- RULE_2: You MUST provide the ENTIRE method or logic block. DO NOT use snippets (e.g., `...`) or partial updates.");
+
+        await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
+
+
+        await sw.WriteLineAsync(
+            "- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
+
+        await sw.WriteLineAsync(
+            "- RULE_5: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
+
+        await sw.WriteLineAsync(
+            "- RULE_6: If a method has NO changes, DO NOT output it. Only output modified methods/logic blocks."); // <--- 原因: 用户要求：如果某个方法没有任何改动，则不需要显示
+
+        await sw.WriteLineAsync(
+            "- RULE_7: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
+        await sw.WriteLineAsync("- RULE_8: (Debug Only) Explain why the previous logic failed.");
+        await sw.WriteLineAsync(
+            "- RULE_9: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
+        
+        await sw.WriteLineAsync("- RULE_10: You MUST answer in Chinese."); // <--- 原因: 用户要求：回答的时候用中文回答
+        await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
+
+
+        await sw.WriteLineAsync($"# {projectName} 项目文档");
+        await sw.WriteLineAsync($"> 生成时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        await sw.WriteLineAsync($"- **项目根目录**: `{rootPath}`");
+        await sw.WriteAsync(projectMetadata);
+        await sw.WriteLineAsync();
+
+
+        Console.WriteLine("[2/5] 正在构建目录树...");
+        await sw.WriteLineAsync("## 1. 项目目录结构\n```text");
+        await sw.WriteLineAsync($"{projectName}/");
+        await BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes);
+        await sw.WriteLineAsync("```\n---\n");
+
+        Console.WriteLine("[3/5] 正在处理源码并标注行号...");
+        var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes);
+
+
+        await sw.WriteLineAsync("\n<ImportantReminder>");
+        await sw.WriteLineAsync("System Context Loaded. Current project uses .NET 8 SDK.");
+        await sw.WriteLineAsync("Immediate Action: Execute audit and categorize findings per RULE_9.");
+        await sw.WriteLineAsync("</ImportantReminder>\n\n---");
+
+        await sw.WriteLineAsync("## 3. 项目规模与统计");
+        await sw.WriteLineAsync($"- **文件总数**: {stats.FileCount}");
+        await sw.WriteLineAsync($"- **代码总行数**: {stats.LineCount}");
+        await sw.WriteLineAsync($"- **安全状态**: 已自动执行正则脱敏");
+
 
         Console.WriteLine($"[5/5] 文档生成成功！");
         return outputPath;
