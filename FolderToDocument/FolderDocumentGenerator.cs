@@ -109,7 +109,7 @@ public partial class FolderDocumentGenerator
             {
                 await sw.WriteLineAsync("## ROLE: Senior Software Architect");
                 await sw.WriteLineAsync(
-                    "## EXPERTISE: .NET 8, High-Performance Systems, Secure Coding, Clean Architecture");
+                    "## EXPERTISE: .NET 8 and later, High-Performance Systems, Secure Coding, Clean Architecture");
             }
 
             await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
