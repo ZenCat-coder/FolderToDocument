@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Collections.Frozen;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -9,35 +11,36 @@ namespace FolderToDocument;
 /// </summary>
 public partial class FolderDocumentGenerator
 {
-    private HashSet<string> ExcludedExtensions { get; } = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenSet<string> ExcludedFolders = 
+        new[] { "bin", "obj", ".vs", ".git", "node_modules", "packages", "Debug", "Release", ".idea", "dist", "build", "__pycache__", "Properties" }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> ExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".exe", ".dll", ".pdb", ".bin", ".obj", ".cache", ".user", ".suo",
         ".jpg", ".png", ".gif", ".ico", ".pdf", ".zip", ".rar", ".7z", ".map", ".bmp"
     };
 
-    private HashSet<string> ExcludedFolders { get; } = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "bin", "obj", ".vs", ".git", "node_modules", "packages",
-        "Debug", "Release", ".idea", "dist", "build", "__pycache__", "Properties"
-    };
-    
     private static readonly EnumerationOptions DefaultEnumOptions = new()
     {
         MatchCasing = MatchCasing.CaseInsensitive,
         RecurseSubdirectories = false
     };
 
-    // 脱敏正则：保护隐私信息
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// 敏感信息脱敏模式集合。
+    /// </summary>
     private static readonly List<(Regex pattern, string replacement)> SensitivePatterns =
     [
-        (new Regex(@"ConnectionString\s*=\s*[""']([^""']+)[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+        (new Regex(@"ConnectionString\s*=\s*[""']([^""']+)[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             "ConnectionString=\"***\""),
 
-        (new Regex(@"\b(?:AppKey|Secret|Password|Token|Pwd|ApiKey|RegCode)\s*=\s*[""']([^""']+)[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+        (new Regex(@"\b(?:AppKey|Secret|Password|Token|Pwd|ApiKey|RegCode)\s*=\s*[""']([^""']+)[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             "Property=\"***\""),
 
-        (new Regex(@"\b[0-9a-f]{32,}\b", RegexOptions.Compiled | RegexOptions.IgnoreCase), "***HEX_SECRET***"),
-        (new Regex(@"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+        (new Regex(@"\b[0-9a-f]{32,}\b", RegexOptions.Compiled | RegexOptions.IgnoreCase,RegexTimeout), "***HEX_SECRET***"),
+        (new Regex(@"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             "user@example.com")
     ];
 
@@ -61,7 +64,10 @@ public partial class FolderDocumentGenerator
 
         var currentRegexes = PrepareIncludeRegexes(includedPatterns);
 
-        string projectName = Path.GetFileName(rootPath.TrimEnd(Path.DirectorySeparatorChar)) ?? "Project";
+        rootPath = Path.GetFullPath(rootPath);
+
+        string projectName = Path.GetFileName(rootPath.TrimEnd(Path.DirectorySeparatorChar));
+        if (string.IsNullOrEmpty(projectName)) projectName = "Project";
 
         if (string.IsNullOrEmpty(outputPath))
         {
@@ -79,99 +85,120 @@ public partial class FolderDocumentGenerator
         Console.WriteLine($"[1/5] 正在解析项目元数据...");
         string projectMetadata = await GetProjectMetadataAsync(rootPath);
 
-        await using var sw = new StreamWriter(outputPath, false, Encoding.UTF8);
-
-        await sw.WriteLineAsync("<TaskDefinition>");
-
-
-        if (taskMode == "explain")
+        // 修正构造函数：在使用 FileStreamOptions 时，移除第二个 bool 参数 (append)
+        // <--- 原因：.NET 8 中 FileStreamOptions 已包含 FileMode，与独立的 append 参数冲突
+        var streamOptions = new FileStreamOptions
         {
-            await sw.WriteLineAsync("## ROLE: Senior Technical Educator");
-            await sw.WriteLineAsync("## EXPERTISE: C# Programming, Logic Explanation, Software Engineering Fundamentals");
-        }
-        else
+            Access = FileAccess.Write,
+            Mode = FileMode.Create, // <--- 原因：FileMode.Create 等同于 append: false
+            Share = FileShare.Read,
+            Options = FileOptions.Asynchronous // <--- 原因：启用异步 IO 提高性能
+        };
+
+        await using (var sw = new StreamWriter(outputPath, Encoding.UTF8, streamOptions))
         {
-            await sw.WriteLineAsync("## ROLE: Senior Software Architect");
-            await sw.WriteLineAsync("## EXPERTISE: .NET 8, High-Performance Systems, Secure Coding, Clean Architecture");
+            await sw.WriteLineAsync("<TaskDefinition>");
+
+            if (taskMode == "explain")
+            {
+                await sw.WriteLineAsync("## ROLE: Senior Technical Educator");
+                await sw.WriteLineAsync(
+                    "## EXPERTISE: C# Programming, Logic Explanation, Software Engineering Fundamentals");
+            }
+            else
+            {
+                await sw.WriteLineAsync("## ROLE: Senior Software Architect");
+                await sw.WriteLineAsync(
+                    "## EXPERTISE: .NET 8, High-Performance Systems, Secure Coding, Clean Architecture");
+            }
+
+            await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
+            await sw.WriteLineAsync(
+                "- STEP_1: Identify all potential side effects of the proposed change on existing logic.");
+            await sw.WriteLineAsync(
+                "- STEP_2: Verify if any method signatures are changed (avoid breaking API compatibility).");
+            await sw.WriteLineAsync(
+                "- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
+            await sw.WriteLineAsync("- STEP_4: Confirm that the solution strictly follows .NET 8 best practices.");
+
+            if (taskMode == "debug")
+            {
+                await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
+                await sw.WriteLineAsync(
+                    "- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
+                await sw.WriteLineAsync("- TASK_2: Provide a thread-safe, memory-efficient fix.");
+                await sw.WriteLineAsync("- TASK_3: Explain why the previous logic failed.");
+            }
+            else if (taskMode == "explain")
+            {
+                await sw.WriteLineAsync("## MODE: BEGINNER_CODE_WALKTHROUGH");
+                await sw.WriteLineAsync("- TASK_1: Explain the high-level workflow of the code in simple terms.");
+                await sw.WriteLineAsync(
+                    "- TASK_2: Break down complex methods and explain the purpose of key variables.");
+                await sw.WriteLineAsync("- TASK_3: Highlight common C# patterns used (e.g., async/await, Linq).");
+            }
+            else
+            {
+                await sw.WriteLineAsync("## MODE: CODE_OPTIMIZATION_REVIEW");
+                await sw.WriteLineAsync("- TASK_1: Audit code for concurrency safety and memory leaks.");
+                await sw.WriteLineAsync("- TASK_2: Refactor for performance using Span/ArrayPool.");
+                await sw.WriteLineAsync("- TASK_3: Ensure SOLID principles.");
+            }
+
+            await sw.WriteLineAsync("- TASK_4: Ensure NO additional external dependencies are introduced.");
+            await sw.WriteLineAsync("</TaskDefinition>\n");
+
+            if (customRequirements is { Count: > 0 })
+            {
+                await sw.WriteLineAsync("> 3. **专项要求**：");
+                foreach (var req in customRequirements) await sw.WriteLineAsync($">    - {req}");
+            }
+
+            await sw.WriteLineAsync("<OutputStrictConstraint>");
+            await sw.WriteLineAsync("- RULE_1: You MUST output using the following Markdown format for EVERY change.");
+            await sw.WriteLineAsync(
+                "- RULE_2: You MUST provide the ENTIRE method or logic block. DO NOT use snippets (e.g., `...`) or partial updates.");
+            await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
+            await sw.WriteLineAsync(
+                "- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
+            await sw.WriteLineAsync(
+                "- RULE_5: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
+            await sw.WriteLineAsync(
+                "- RULE_6: If a method has NO changes, DO NOT output it. Only output modified methods/logic blocks.");
+            await sw.WriteLineAsync(
+                "- RULE_7: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
+            await sw.WriteLineAsync(
+                "- RULE_8: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
+            await sw.WriteLineAsync("- RULE_9: You MUST answer in Chinese.");
+            await sw.WriteLineAsync(
+                "- RULE_10: You MUST add XML documentation comments (/// <summary>) for any NEW or MODIFIED methods.");
+            await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
+
+            await sw.WriteLineAsync($"# {projectName} 项目文档");
+            await sw.WriteLineAsync($"> 生成时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            await sw.WriteLineAsync($"- **项目根目录**: `{rootPath}`");
+            await sw.WriteAsync(projectMetadata);
+            await sw.WriteLineAsync();
+
+            Console.WriteLine("[2/5] 正在构建目录树...");
+            await sw.WriteLineAsync("## 1. 项目目录结构\n```text");
+            await sw.WriteLineAsync($"{projectName}/");
+            await BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes);
+            await sw.WriteLineAsync("```\n---\n");
+
+            Console.WriteLine("[3/5] 正在处理源码并标注行号...");
+            var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode);
+
+            await sw.WriteLineAsync("\n<ImportantReminder>");
+            await sw.WriteLineAsync("System Context Loaded. Current project uses .NET 8 SDK.");
+            await sw.WriteLineAsync("Immediate Action: Execute audit and categorize findings per RULE_9.");
+            await sw.WriteLineAsync("</ImportantReminder>\n\n---");
+
+            await sw.WriteLineAsync("## 3. 项目规模 with 统计");
+            await sw.WriteLineAsync($"- **文件总数**: {stats.FileCount}");
+            await sw.WriteLineAsync($"- **代码总行数**: {stats.LineCount}");
+            await sw.WriteLineAsync($"- **安全状态**: 已自动执行正则脱敏");
         }
-
-        await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
-        await sw.WriteLineAsync("- STEP_1: Identify all potential side effects of the proposed change on existing logic.");
-        await sw.WriteLineAsync("- STEP_2: Verify if any method signatures are changed (avoid breaking API compatibility).");
-        await sw.WriteLineAsync("- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
-        await sw.WriteLineAsync("- STEP_4: Confirm that the solution strictly follows .NET 8 best practices.");
-
-
-        if (taskMode == "debug")
-        {
-            await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
-            await sw.WriteLineAsync("- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
-            await sw.WriteLineAsync("- TASK_2: Provide a thread-safe, memory-efficient fix.");
-            await sw.WriteLineAsync("- TASK_3: Explain why the previous logic failed.");
-        }
-        else if (taskMode == "explain")
-        {
-            await sw.WriteLineAsync("## MODE: BEGINNER_CODE_WALKTHROUGH");
-            await sw.WriteLineAsync("- TASK_1: Explain the high-level workflow of the code in simple terms.");
-            await sw.WriteLineAsync("- TASK_2: Break down complex methods and explain the purpose of key variables.");
-            await sw.WriteLineAsync("- TASK_3: Highlight common C# patterns used (e.g., async/await, Linq).");
-        }
-        else
-        {
-            await sw.WriteLineAsync("## MODE: CODE_OPTIMIZATION_REVIEW");
-            await sw.WriteLineAsync("- TASK_1: Audit code for concurrency safety and memory leaks.");
-            await sw.WriteLineAsync("- TASK_2: Refactor for performance using Span/ArrayPool.");
-            await sw.WriteLineAsync("- TASK_3: Ensure SOLID principles.");
-        }
-
-        await sw.WriteLineAsync("- TASK_4: Ensure NO additional external dependencies are introduced.");
-        await sw.WriteLineAsync("</TaskDefinition>\n");
-
-        if (customRequirements is { Count: > 0 })
-        {
-            await sw.WriteLineAsync("> 3. **专项要求**：");
-            foreach (var req in customRequirements) await sw.WriteLineAsync($">    - {req}");
-        }
-
-        await sw.WriteLineAsync("<OutputStrictConstraint>");
-        await sw.WriteLineAsync("- RULE_1: You MUST output using the following Markdown format for EVERY change.");
-        await sw.WriteLineAsync("- RULE_2: You MUST provide the ENTIRE method or logic block. DO NOT use snippets (e.g., `...`) or partial updates.");
-        await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
-        await sw.WriteLineAsync("- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
-        await sw.WriteLineAsync("- RULE_5: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
-        await sw.WriteLineAsync("- RULE_6: If a method has NO changes, DO NOT output it. Only output modified methods/logic blocks.");
-        await sw.WriteLineAsync("- RULE_7: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
-        await sw.WriteLineAsync("- RULE_8: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
-        await sw.WriteLineAsync("- RULE_9: You MUST answer in Chinese.");
-        // <--- 原因: 新增 RULE_10，强制要求生成的代码必须包含 XML 文档注释 (/// <summary>)，以便于代码维护和理解。
-        await sw.WriteLineAsync("- RULE_10: You MUST add XML documentation comments (/// <summary>) for any NEW or MODIFIED methods.");
-        await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
-
-        await sw.WriteLineAsync($"# {projectName} 项目文档");
-        await sw.WriteLineAsync($"> 生成时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        await sw.WriteLineAsync($"- **项目根目录**: `{rootPath}`");
-        await sw.WriteAsync(projectMetadata);
-        await sw.WriteLineAsync();
-
-        Console.WriteLine("[2/5] 正在构建目录树...");
-        await sw.WriteLineAsync("## 1. 项目目录结构\n```text");
-        await sw.WriteLineAsync($"{projectName}/");
-        await BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes);
-        await sw.WriteLineAsync("```\n---\n");
-
-        Console.WriteLine("[3/5] 正在处理源码并标注行号...");
-
-        var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode);
-
-        await sw.WriteLineAsync("\n<ImportantReminder>");
-        await sw.WriteLineAsync("System Context Loaded. Current project uses .NET 8 SDK.");
-        await sw.WriteLineAsync("Immediate Action: Execute audit and categorize findings per RULE_9.");
-        await sw.WriteLineAsync("</ImportantReminder>\n\n---");
-
-        await sw.WriteLineAsync("## 3. 项目规模 with 统计");
-        await sw.WriteLineAsync($"- **文件总数**: {stats.FileCount}");
-        await sw.WriteLineAsync($"- **代码总行数**: {stats.LineCount}");
-        await sw.WriteLineAsync($"- **安全状态**: 已自动执行正则脱敏");
 
         Console.WriteLine($"[5/5] 文档生成成功！");
         return outputPath;
@@ -185,16 +212,18 @@ public partial class FolderDocumentGenerator
         if (string.IsNullOrEmpty(rootPath)) return string.Empty;
 
         var enumerationOptions = new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 10 };
+
+        // 使用更精确的路径分隔符检查逻辑，防止误伤
         var csprojFiles = Directory.EnumerateFiles(rootPath, "*.csproj", enumerationOptions)
             .Where(f => !ExcludedFolders.Any(ef =>
-                f.Contains($"{Path.DirectorySeparatorChar}{ef}{Path.DirectorySeparatorChar}")));
+                f.Split(Path.DirectorySeparatorChar)
+                    .Contains(ef, StringComparer.OrdinalIgnoreCase))); // <--- 原因：精确匹配文件夹段，避免子字符串误匹配
 
         var sb = new StringBuilder();
         bool found = false;
 
         foreach (var file in csprojFiles)
         {
-            if (!File.Exists(file)) continue;
             if (!found)
             {
                 sb.AppendLine("- **项目技术栈与依赖库**:");
@@ -203,12 +232,11 @@ public partial class FolderDocumentGenerator
 
             try
             {
-                // [Modified] 使用异步流式加载，比 ReadAllText 更节省内存
-                await using var stream = File.OpenRead(file);
+                await using var stream =
+                    new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
+                        true); // <--- 原因：配置异步 FileStream
                 var doc = await XDocument.LoadAsync(stream, LoadOptions.None, CancellationToken.None);
 
-                var projectElement = doc.Element("Project");
-                // 查找 TargetFramework 或 TargetFrameworks
                 var framework = doc.Descendants("TargetFramework").FirstOrDefault()?.Value
                                 ?? doc.Descendants("TargetFrameworks").FirstOrDefault()?.Value
                                 ?? "Unknown Framework";
@@ -228,8 +256,7 @@ public partial class FolderDocumentGenerator
             }
             catch (Exception ex)
             {
-                // 容错处理：如果 XML 格式错误，记录警告但不中断流程
-                sb.AppendLine($"  - **{Path.GetFileName(file)}** (Error parsing: {ex.Message})");
+                sb.AppendLine($"  - **{Path.GetFileName(file)}** (解析失败: {ex.Message})"); // <--- 原因：更友好的错误记录
             }
         }
 
@@ -372,7 +399,6 @@ public partial class FolderDocumentGenerator
         int fileCount = 0;
         long totalLines = 0;
 
-        // [Modified] 使用静态 DefaultEnumOptions
         var files = Directory.EnumerateFiles(currentPath, "*", DefaultEnumOptions)
             .Where(f => !ExcludedExtensions.Contains(Path.GetExtension(f).ToLower()))
             .Where(path => IsPathIncluded(GetRelativePath(path, rootPath), includeRegexes, false))
@@ -387,34 +413,50 @@ public partial class FolderDocumentGenerator
 
             try
             {
-                string content = await File.ReadAllTextAsync(file);
-
-                if (IsConfigFile(file))
+                // 如果不需要正则脱敏或去注释，直接使用最轻量级的流式读取
+                if (!IsConfigFile(file) && taskMode == "explain")
                 {
-                    content = SanitizeSensitiveInfo(content);
+                    await tw.WriteLineAsync($"```{GetFileExtension(file)}");
+                    using var streamReader = new StreamReader(file, Encoding.UTF8);
+                    int currentFileLine = 1;
+                    while (await streamReader.ReadLineAsync() is { } line)
+                    {
+                        // <--- 原因：异步环境下使用 line.AsMemory() 替代 AsSpan()，因为 Span 无法跨越 await
+                        await tw.WriteAsync(currentFileLine.ToString());
+                        await tw.WriteAsync("|");
+                        await tw.WriteLineAsync(line.AsMemory().TrimEnd());
+                        currentFileLine++;
+                        totalLines++;
+                    }
+
+                    await tw.WriteLineAsync("```");
+                }
+                else
+                {
+                    // 需要处理内容的情况：读取全文进行正则处理
+                    string content = await File.ReadAllTextAsync(file);
+                    if (IsConfigFile(file)) content = SanitizeSensitiveInfo(content);
+                    if (taskMode != "explain") content = StripComments(content, extension);
+
+                    string fence = content.Contains("```") ? "~~~~" : "```";
+                    await tw.WriteLineAsync($"{fence}{GetFileExtension(file)}");
+
+                    // 使用 StringReader 逐行处理，减少 Split 产生的数组分配
+                    using var sr = new StringReader(content);
+                    int lineNum = 1;
+                    while (await sr.ReadLineAsync() is { } line)
+                    {
+                        // <--- 原因：同样使用 AsMemory() 解决异步兼容性问题
+                        await tw.WriteAsync(lineNum.ToString());
+                        await tw.WriteAsync("|");
+                        await tw.WriteLineAsync(line.AsMemory().TrimEnd());
+                        lineNum++;
+                        totalLines++;
+                    }
+
+                    await tw.WriteLineAsync(fence);
                 }
 
-                if (taskMode != "explain")
-                {
-                    content = StripComments(content, extension);
-                }
-
-                string fence = content.Contains("```") ? "~~~~" : "```";
-                await tw.WriteLineAsync($"{fence}{GetFileExtension(file)}");
-
-                using var reader = new StringReader(content);
-                int currentFileLine = 1;
-                while (await reader.ReadLineAsync() is { } line)
-                {
-                    await tw.WriteAsync(currentFileLine.ToString());
-                    await tw.WriteAsync("|");
-                    await tw.WriteLineAsync(line.TrimEnd());
-
-                    currentFileLine++;
-                    totalLines++;
-                }
-
-                await tw.WriteLineAsync(fence);
                 fileCount++;
                 Console.WriteLine($"[写入成功] {relPath}");
             }
@@ -444,30 +486,38 @@ public partial class FolderDocumentGenerator
     /// <summary>
     /// 去除代码中的注释（支持 C#, JS, TS, JSON）。
     /// </summary>
-
     private string StripComments(string content, string extension)
     {
-        if (extension != ".cs" && extension != ".js" && extension != ".ts" && extension != ".json")
+        // 限制仅处理类 C 语言语法的源码文件
+        if (extension is not (".cs" or ".js" or ".ts" or ".json")) // <--- 原因：使用 C# 模式匹配简化逻辑
             return content;
 
-        // [Modified] 调用编译时生成的正则方法
         return CommentStripRegex().Replace(content, m =>
         {
-            // 如果是字符串字面量，保留原样
+            // 如果匹配到的是字符串字面量（Group 1），则原样保留，避免破坏代码中的 URL 或文本
             if (m.Groups[1].Success) return m.Groups[1].Value;
 
-            // [Modified] 仅保留换行符以保持行号一致，使用 LINQ 替代内部 Regex，减少分配
-            // 原逻辑: return Regex.Replace(m.Value, @"[^\r\n]", "");
-            return string.Concat(m.Value.Where(c => c == '\r' || c == '\n'));
+            // 对于注释块，保留其内部的换行符，以维持原始代码的行号对齐
+            // <--- 原因：使用 Span 优化字符过滤逻辑
+            var valueSpan = m.ValueSpan;
+            if (valueSpan.IndexOfAny('\r', '\n') == -1) return string.Empty;
+
+            var sb = new StringBuilder(); // 在高频场景下此处可替换为 ThreadStatic 的 StringBuilder 
+            foreach (var c in valueSpan)
+            {
+                if (c is '\r' or '\n') sb.Append(c);
+            }
+            return sb.ToString();
         });
     }
 
     /// <summary>
     /// 使用 Source Generator 在编译时生成正则表达式，避免运行时解析开销。
     /// </summary>
-    [GeneratedRegex(@"(@""(?:[^""]|"""")*""|""(?:\\.|[^\\""])*""|'(?:\\.|[^\\'])*')|//.*|/\*[\s\S]*?\*/", RegexOptions.Multiline)]
+    [GeneratedRegex(@"(@""(?:[^""]|"""")*""|""(?:\\.|[^\\""])*""|'(?:\\.|[^\\'])*')|//.*|/\*[\s\S]*?\*/",
+        RegexOptions.Multiline)]
     private static partial Regex CommentStripRegex();
-    
+
     private string GetRelativePath(string fullPath, string rootPath) => Path.GetRelativePath(rootPath, fullPath);
 
     /// <summary>
