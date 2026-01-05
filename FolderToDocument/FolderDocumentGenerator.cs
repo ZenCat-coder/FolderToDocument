@@ -113,14 +113,12 @@ public partial class FolderDocumentGenerator
             }
 
             await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
-            await sw.WriteLineAsync(
-                "- STEP_1: Identify all potential side effects of the proposed change on existing logic.");
-            await sw.WriteLineAsync(
-                "- STEP_2: Verify if any method signatures are changed (avoid breaking API compatibility).");
-            await sw.WriteLineAsync(
-                "- STEP_3: Explicitly check for null-reference risks and proper exception handling in new code blocks.");
-            await sw.WriteLineAsync("- STEP_4: Confirm that the solution strictly follows .NET 8 best practices.");
-
+            await sw.WriteLineAsync("- STEP_1: Identify all potential side effects on existing logic.");
+            await sw.WriteLineAsync("- STEP_2: Verify API compatibility (method signatures).");
+            await sw.WriteLineAsync("- STEP_3: Explicitly check for null-references and exception safety.");
+            await sw.WriteLineAsync("- STEP_4: Confirm .NET 8 best practices (Span, Memory, Task).");
+            await sw.WriteLineAsync("- STEP_5: GLOBAL PATTERN SCAN: Search the entire provided context for identical or similar logic patterns and apply the same optimization to ALL of them to ensure consistency.");
+            
             if (taskMode == "debug")
             {
                 await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
@@ -161,17 +159,14 @@ public partial class FolderDocumentGenerator
             await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
             await sw.WriteLineAsync(
                 "- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
-            await sw.WriteLineAsync(
-                "- RULE_5: Every modification MUST include a Chinese comment (// <--- 原因) explaining 'WHY' the change was made.");
-            await sw.WriteLineAsync(
-                "- RULE_6: If a method has NO changes, DO NOT output it. Only output modified methods/logic blocks.");
-            await sw.WriteLineAsync(
-                "- RULE_7: If a change affects other methods (chain reaction), include ALL affected methods in the output.");
+            await sw.WriteLineAsync("- RULE_5: Only functional logic changes require the (// <--- 原因) comment. DO NOT add this comment to justify why you DID NOT change the code.");
+            await sw.WriteLineAsync("- RULE_6: [STRICT] If the executable logic of a method is not changed, DO NOT output it. Adding, removing, or modifying comments/XML docs ALONE does not count as a change.");
+            await sw.WriteLineAsync("- RULE_7: CONSISTENCY ENFORCEMENT: If an optimization or fix applies to multiple locations (even in different methods or files), you MUST include ALL affected blocks. DO NOT optimize one and leave the others in their original state.");
             await sw.WriteLineAsync(
                 "- RULE_8: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
             await sw.WriteLineAsync("- RULE_9: You MUST answer in Chinese.");
-            await sw.WriteLineAsync(
-                "- RULE_10: You MUST add XML documentation comments (/// <summary>) for any NEW or MODIFIED methods.");
+            await sw.WriteLineAsync("- RULE_10: XML documentation (/// <summary>) should ONLY be added/updated if the method's logic was actually modified.");
+            await sw.WriteLineAsync("- RULE_11: ABSOLUTELY FORBIDDEN to output a method just to provide an 'analysis' or 'confirmation' if no code was improved.");
             await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
 
             await sw.WriteLineAsync($"# {projectName} 项目文档");
@@ -190,8 +185,9 @@ public partial class FolderDocumentGenerator
             var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode);
 
             await sw.WriteLineAsync("\n<ImportantReminder>");
-            await sw.WriteLineAsync("System Context Loaded. Current project uses .NET 8 SDK.");
-            await sw.WriteLineAsync("Immediate Action: Execute audit and categorize findings per RULE_9.");
+            await sw.WriteLineAsync("System Context Loaded. .NET 8 Strict Mode.");
+            await sw.WriteLineAsync("Consistency Check: I will ensure that every identified optimization pattern is applied globally across all provided methods.");
+            await sw.WriteLineAsync("No Half-Measures: If I fix a performance/security issue in one block, I will scan and fix it in all related blocks.");
             await sw.WriteLineAsync("</ImportantReminder>\n\n---");
 
             await sw.WriteLineAsync("## 3. 项目规模 with 统计");
