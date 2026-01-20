@@ -9,8 +9,8 @@ try
 {
     // 1. 配置：输入你需要扫描的项目路径
     // string folderPath = @"E:\MyCode\FolderToDocument";
-    //string folderPath = @"E:\MyScript\ZenlessZoneZero";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoGroupGame";
+    //string folderPath = @"E:\MyCode\C#\MyReview\DelegateTest";
     string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
 
 
@@ -24,6 +24,11 @@ try
         //"ZYBasisBusinessModule/**",
         //"ZYWireDefuserGameModule/**",
         //"ZYUndercoverGameModule/**",
+        //"ZYRobberyStormGameModule/**",
+        //"ZYAgentAssistant/**",
+        //"DelegateTest/**",
+        //"ZYBasisBusinessModule/**",
+        //"ZYSlaveGameModule/**",
         //"*.sln",
         //"global.json",
     };
@@ -44,7 +49,8 @@ try
     // 3. 配置：自定义 AI 专项要求 (这些会直接出现在 MD 文件的头部指令中)
     var myRequirements = new List<string>
     {
-        "使用中文回答。"
+        "删除页码行数",
+        "使用中文回答"
     };
 
     // 4. 执行生成
@@ -63,7 +69,7 @@ try
     Console.WriteLine("\n💡 建议操作：");
     Console.WriteLine("1. 使用 VS Code 打开此 MD 文件预览效果。");
     Console.WriteLine("2. 全选内容并粘贴给 AI (如 ChatGPT 或 Claude)。");
-    Console.WriteLine("3. 由于带有了【行号】和【指令集】，你可以直接命令 AI 修改具体代码块。");
+    Console.WriteLine("3. 由于文件包含完整【指令集】和清晰的结构，你可以直接命令 AI 修改具体代码块。");
 }
 catch (Exception ex)
 {
@@ -71,5 +77,3 @@ catch (Exception ex)
     Console.WriteLine(ex.StackTrace);
 }
 
-// Console.WriteLine("\n按任意键退出工具...");
-// Console.ReadKey();

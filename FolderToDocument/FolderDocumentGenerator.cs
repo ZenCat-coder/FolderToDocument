@@ -85,14 +85,14 @@ public partial class FolderDocumentGenerator
         Console.WriteLine($"[1/5] 正在解析项目元数据...");
         string projectMetadata = await GetProjectMetadataAsync(rootPath);
 
-        // 修正构造函数：在使用 FileStreamOptions 时，移除第二个 bool 参数 (append)
-        // <--- 原因：.NET 8 中 FileStreamOptions 已包含 FileMode，与独立的 append 参数冲突
+
+
         var streamOptions = new FileStreamOptions
         {
             Access = FileAccess.Write,
-            Mode = FileMode.Create, // <--- 原因：FileMode.Create 等同于 append: false
+            Mode = FileMode.Create,
             Share = FileShare.Read,
-            Options = FileOptions.Asynchronous // <--- 原因：启用异步 IO 提高性能
+            Options = FileOptions.Asynchronous
         };
 
         await using (var sw = new StreamWriter(outputPath, Encoding.UTF8, streamOptions))
@@ -118,7 +118,7 @@ public partial class FolderDocumentGenerator
             await sw.WriteLineAsync("- STEP_3: Explicitly check for null-references and exception safety.");
             await sw.WriteLineAsync("- STEP_4: Confirm .NET 8 best practices (Span, Memory, Task).");
             await sw.WriteLineAsync("- STEP_5: GLOBAL PATTERN SCAN: Search the entire provided context for identical or similar logic patterns and apply the same optimization to ALL of them to ensure consistency.");
-            
+
             if (taskMode == "debug")
             {
                 await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
@@ -181,7 +181,10 @@ public partial class FolderDocumentGenerator
             await BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes);
             await sw.WriteLineAsync("```\n---\n");
 
-            Console.WriteLine("[3/5] 正在处理源码并标注行号...");
+            // <--- 原因: 更新控制台输出以反映不再生成行号的事实
+            // [Original] Console.WriteLine("[3/5] 正在处理源码并标注行号...");
+            Console.WriteLine("[3/5] 正在处理源码...");
+            
             var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode);
 
             await sw.WriteLineAsync("\n<ImportantReminder>");
@@ -409,19 +412,25 @@ public partial class FolderDocumentGenerator
 
             try
             {
-                // 如果不需要正则脱敏或去注释，直接使用最轻量级的流式读取
                 if (!IsConfigFile(file) && taskMode == "explain")
                 {
                     await tw.WriteLineAsync($"```{GetFileExtension(file)}");
-                    using var streamReader = new StreamReader(file, Encoding.UTF8);
-                    int currentFileLine = 1;
+                    
+                    // 优化：显式指定 FileStreamOptions 提高异步IO性能，减少隐式分配
+                    await using var fs = new FileStream(file, new FileStreamOptions 
+                    { 
+                        Mode = FileMode.Open, 
+                        Access = FileAccess.Read, 
+                        Share = FileShare.Read, 
+                        Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                    });
+                    
+                    using var streamReader = new StreamReader(fs, Encoding.UTF8);
+                    
+                    // <--- 原因: 删除页码行数 (不再维护 currentFileLine)
                     while (await streamReader.ReadLineAsync() is { } line)
                     {
-                        // <--- 原因：异步环境下使用 line.AsMemory() 替代 AsSpan()，因为 Span 无法跨越 await
-                        await tw.WriteAsync(currentFileLine.ToString());
-                        await tw.WriteAsync("|");
                         await tw.WriteLineAsync(line.AsMemory().TrimEnd());
-                        currentFileLine++;
                         totalLines++;
                     }
 
@@ -429,7 +438,6 @@ public partial class FolderDocumentGenerator
                 }
                 else
                 {
-                    // 需要处理内容的情况：读取全文进行正则处理
                     string content = await File.ReadAllTextAsync(file);
                     if (IsConfigFile(file)) content = SanitizeSensitiveInfo(content);
                     if (taskMode != "explain") content = StripComments(content, extension);
@@ -437,16 +445,12 @@ public partial class FolderDocumentGenerator
                     string fence = content.Contains("```") ? "~~~~" : "```";
                     await tw.WriteLineAsync($"{fence}{GetFileExtension(file)}");
 
-                    // 使用 StringReader 逐行处理，减少 Split 产生的数组分配
                     using var sr = new StringReader(content);
-                    int lineNum = 1;
+                    
+                    // <--- 原因: 删除页码行数 (不再维护 lineNum)
                     while (await sr.ReadLineAsync() is { } line)
                     {
-                        // <--- 原因：同样使用 AsMemory() 解决异步兼容性问题
-                        await tw.WriteAsync(lineNum.ToString());
-                        await tw.WriteAsync("|");
                         await tw.WriteLineAsync(line.AsMemory().TrimEnd());
-                        lineNum++;
                         totalLines++;
                     }
 
@@ -484,21 +488,18 @@ public partial class FolderDocumentGenerator
     /// </summary>
     private string StripComments(string content, string extension)
     {
-        // 限制仅处理类 C 语言语法的源码文件
-        if (extension is not (".cs" or ".js" or ".ts" or ".json")) // <--- 原因：使用 C# 模式匹配简化逻辑
+        if (extension is not (".cs" or ".js" or ".ts" or ".json"))
             return content;
 
         return CommentStripRegex().Replace(content, m =>
         {
-            // 如果匹配到的是字符串字面量（Group 1），则原样保留，避免破坏代码中的 URL 或文本
             if (m.Groups[1].Success) return m.Groups[1].Value;
 
-            // 对于注释块，保留其内部的换行符，以维持原始代码的行号对齐
-            // <--- 原因：使用 Span 优化字符过滤逻辑
             var valueSpan = m.ValueSpan;
             if (valueSpan.IndexOfAny('\r', '\n') == -1) return string.Empty;
 
-            var sb = new StringBuilder(); // 在高频场景下此处可替换为 ThreadStatic 的 StringBuilder 
+            // 优化：预分配 StringBuilder 容量，避免扩容开销
+            var sb = new StringBuilder(valueSpan.Length);
             foreach (var c in valueSpan)
             {
                 if (c is '\r' or '\n') sb.Append(c);
