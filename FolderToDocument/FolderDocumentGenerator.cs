@@ -36,11 +36,14 @@ public partial class FolderDocumentGenerator
         (new Regex(@"ConnectionString\s*=\s*[""']([^""']+)[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             "ConnectionString=\"***\""),
 
-        (new Regex(@"\b(?:AppKey|Secret|Password|Token|Pwd|ApiKey|RegCode)\s*=\s*[""']([^""']+)[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
+        (new Regex(@"(?:AppKey|Secret|Password|Token|Pwd|ApiKey|RegCode)\s*=\s*[""']([^""']+)[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             "Property=\"***\""),
 
-        (new Regex(@"\b[0-9a-f]{32,}\b", RegexOptions.Compiled | RegexOptions.IgnoreCase,RegexTimeout), "***HEX_SECRET***"),
-        (new Regex(@"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
+        // <--- 原因: 弱化边界检查，减少回溯。如果是配置文件，通常这些值在引号内。
+        (new Regex(@"[""'][0-9a-fA-F]{32,}[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout), "\"***HEX_SECRET***\""),
+    
+        // <--- 原因: 简化邮箱匹配逻辑，仅在配置类文件中做基础脱敏，降低复杂度
+        (new Regex(@"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             "user@example.com")
     ];
 
@@ -536,14 +539,29 @@ public partial class FolderDocumentGenerator
     {
         if (string.IsNullOrEmpty(content)) return content;
 
-        // 性能优化：直接使用静态预编译正则的 Replace 方法
-        // <--- 原因：Regex.Replace 内部已包含匹配检查，无需外部重复调用 IsMatch
-        foreach (var (pattern, replacement) in SensitivePatterns)
+        var lines = content.Split([Environment.NewLine, "\n", "\r"], StringSplitOptions.None);
+        var sb = new StringBuilder(content.Length);
+
+        foreach (var line in lines)
         {
-            content = pattern.Replace(content, replacement);
+            string processedLine = line;
+            foreach (var (pattern, replacement) in SensitivePatterns)
+            {
+                try
+                {
+                    // 设置了 100ms 超时的正则在此处可能会抛出异常
+                    processedLine = pattern.Replace(processedLine, replacement);
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    // <--- 原因: 如果匹配超时，保留原样或标记，防止程序崩溃
+                    continue; 
+                }
+            }
+            sb.AppendLine(processedLine);
         }
 
-        return content;
+        return sb.ToString();
     }
 
     /// <summary>
