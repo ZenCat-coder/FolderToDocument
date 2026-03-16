@@ -1,8 +1,10 @@
-using System.Buffers;
 using System.Collections.Frozen;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Microsoft.CodeAnalysis; // <--- Roslyn 核心
+using Microsoft.CodeAnalysis.CSharp; // <--- C# 语法树
+using Microsoft.CodeAnalysis.CSharp.Syntax; // <--- 语法节点类型
 
 namespace FolderToDocument;
 
@@ -11,9 +13,14 @@ namespace FolderToDocument;
 /// </summary>
 public partial class FolderDocumentGenerator
 {
-    private static readonly FrozenSet<string> ExcludedFolders = 
-        new[] { "bin", "obj", ".vs", ".git", "node_modules", "packages", "Debug", "Release", ".idea", "dist", "build", "__pycache__", "Properties" }
+    private static readonly FrozenSet<string> ExcludedFolders =
+        new[]
+            {
+                "bin", "obj", ".vs", ".git", "node_modules", "packages", "Debug", "Release", ".idea", "dist", "build",
+                "__pycache__", "Properties"
+            }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     private static readonly HashSet<string> ExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".exe", ".dll", ".pdb", ".bin", ".obj", ".cache", ".user", ".suo",
@@ -40,8 +47,9 @@ public partial class FolderDocumentGenerator
             "Property=\"***\""),
 
         // <--- 原因: 弱化边界检查，减少回溯。如果是配置文件，通常这些值在引号内。
-        (new Regex(@"[""'][0-9a-fA-F]{32,}[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout), "\"***HEX_SECRET***\""),
-    
+        (new Regex(@"[""'][0-9a-fA-F]{32,}[""']", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
+            "\"***HEX_SECRET***\""),
+
         // <--- 原因: 简化邮箱匹配逻辑，仅在配置类文件中做基础脱敏，降低复杂度
         (new Regex(@"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             "user@example.com")
@@ -53,12 +61,18 @@ public partial class FolderDocumentGenerator
     /// <param name="rootPath">待分析的项目根路径</param>
     /// <param name="outputPath">输出 Markdown 的路径（可选）</param>
     /// <param name="includedPatterns">包含文件的通配符规则（可选）</param>
-    /// <param name="taskMode">AI 任务模式（debug/optimize）</param>
+    /// <param name="taskMode">AI 任务模式（debug/optimize/explain/skeleton）</param>
     /// <param name="customRequirements">自定义需求描述列表</param>
+    /// <param name="excludedClasses">需要从输出中排除的类名列表（所有模式均生效）</param>
+    /// <param name="preservedMethods"></param>
+    /// <param name="excludedFolders"></param>
     /// <returns>生成的文档物理路径</returns>
     public async Task<string> GenerateDocumentAsync(string rootPath, string outputPath = null,
         List<string> includedPatterns = null, string taskMode = "optimize",
-        List<string> customRequirements = null)
+        List<string> customRequirements = null,
+        List<string> excludedClasses = null,
+        List<string> preservedMethods = null,
+        List<string> excludedFolders = null) // <--- 原因: 新增类排除参数，保持默认值以确保对已有调用方的向后兼容
     {
         ArgumentNullException.ThrowIfNull(rootPath);
 
@@ -87,8 +101,6 @@ public partial class FolderDocumentGenerator
 
         Console.WriteLine($"[1/5] 正在解析项目元数据...");
         string projectMetadata = await GetProjectMetadataAsync(rootPath);
-
-
 
         var streamOptions = new FileStreamOptions
         {
@@ -120,7 +132,8 @@ public partial class FolderDocumentGenerator
             await sw.WriteLineAsync("- STEP_2: Verify API compatibility (method signatures).");
             await sw.WriteLineAsync("- STEP_3: Explicitly check for null-references and exception safety.");
             await sw.WriteLineAsync("- STEP_4: Confirm .NET 8 best practices (Span, Memory, Task).");
-            await sw.WriteLineAsync("- STEP_5: GLOBAL PATTERN SCAN: Search the entire provided context for identical or similar logic patterns and apply the same optimization to ALL of them to ensure consistency.");
+            await sw.WriteLineAsync(
+                "- STEP_5: GLOBAL PATTERN SCAN: Search the entire provided context for identical or similar logic patterns and apply the same optimization to ALL of them to ensure consistency.");
 
             if (taskMode == "debug")
             {
@@ -137,6 +150,17 @@ public partial class FolderDocumentGenerator
                 await sw.WriteLineAsync(
                     "- TASK_2: Break down complex methods and explain the purpose of key variables.");
                 await sw.WriteLineAsync("- TASK_3: Highlight common C# patterns used (e.g., async/await, Linq).");
+            }
+            else if (taskMode == "skeleton")
+            {
+                await sw.WriteLineAsync("## MODE: SKELETON_ARCHITECTURE_REVIEW");
+                await sw.WriteLineAsync(
+                    "- TASK_1: Analyze architecture and design patterns solely from class/method signatures.");
+                await sw.WriteLineAsync(
+                    "- TASK_2: Identify SOLID violations, excessive coupling, and naming inconsistencies.");
+                await sw.WriteLineAsync("- TASK_3: Suggest structural refactoring based on the skeleton overview.");
+                await sw.WriteLineAsync(
+                    "- NOTE: Method bodies have been stripped to reduce token usage. Focus on structure, not implementation.");
             }
             else
             {
@@ -162,14 +186,19 @@ public partial class FolderDocumentGenerator
             await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
             await sw.WriteLineAsync(
                 "- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
-            await sw.WriteLineAsync("- RULE_5: Only functional logic changes require the (// <--- 原因) comment. DO NOT add this comment to justify why you DID NOT change the code.");
-            await sw.WriteLineAsync("- RULE_6: [STRICT] If the executable logic of a method is not changed, DO NOT output it. Adding, removing, or modifying comments/XML docs ALONE does not count as a change.");
-            await sw.WriteLineAsync("- RULE_7: CONSISTENCY ENFORCEMENT: If an optimization or fix applies to multiple locations (even in different methods or files), you MUST include ALL affected blocks. DO NOT optimize one and leave the others in their original state.");
+            await sw.WriteLineAsync(
+                "- RULE_5: Only functional logic changes require the (// <--- 原因) comment. DO NOT add this comment to justify why you DID NOT change the code.");
+            await sw.WriteLineAsync(
+                "- RULE_6: [STRICT] If the executable logic of a method is not changed, DO NOT output it. Adding, removing, or modifying comments/XML docs ALONE does not count as a change.");
+            await sw.WriteLineAsync(
+                "- RULE_7: CONSISTENCY ENFORCEMENT: If an optimization or fix applies to multiple locations (even in different methods or files), you MUST include ALL affected blocks. DO NOT optimize one and leave the others in their original state.");
             await sw.WriteLineAsync(
                 "- RULE_8: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
             await sw.WriteLineAsync("- RULE_9: You MUST answer in Chinese.");
-            await sw.WriteLineAsync("- RULE_10: XML documentation (/// <summary>) should ONLY be added/updated if the method's logic was actually modified.");
-            await sw.WriteLineAsync("- RULE_11: ABSOLUTELY FORBIDDEN to output a method just to provide an 'analysis' or 'confirmation' if no code was improved.");
+            await sw.WriteLineAsync(
+                "- RULE_10: XML documentation (/// <summary>) should ONLY be added/updated if the method's logic was actually modified.");
+            await sw.WriteLineAsync(
+                "- RULE_11: ABSOLUTELY FORBIDDEN to output a method just to provide an 'analysis' or 'confirmation' if no code was improved.");
             await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
 
             await sw.WriteLineAsync($"# {projectName} 项目文档");
@@ -181,19 +210,19 @@ public partial class FolderDocumentGenerator
             Console.WriteLine("[2/5] 正在构建目录树...");
             await sw.WriteLineAsync("## 1. 项目目录结构\n```text");
             await sw.WriteLineAsync($"{projectName}/");
-            await BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes);
+            await BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes, excludedFolders);
             await sw.WriteLineAsync("```\n---\n");
 
-            // <--- 原因: 更新控制台输出以反映不再生成行号的事实
-            // [Original] Console.WriteLine("[3/5] 正在处理源码并标注行号...");
             Console.WriteLine("[3/5] 正在处理源码...");
-            
-            var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode);
 
+            var stats = await ProcessDirectoryWithStatsAsync(rootPath, rootPath, sw, currentRegexes, taskMode,
+                excludedClasses, preservedMethods, excludedFolders);
             await sw.WriteLineAsync("\n<ImportantReminder>");
             await sw.WriteLineAsync("System Context Loaded. .NET 8 Strict Mode.");
-            await sw.WriteLineAsync("Consistency Check: I will ensure that every identified optimization pattern is applied globally across all provided methods.");
-            await sw.WriteLineAsync("No Half-Measures: If I fix a performance/security issue in one block, I will scan and fix it in all related blocks.");
+            await sw.WriteLineAsync(
+                "Consistency Check: I will ensure that every identified optimization pattern is applied globally across all provided methods.");
+            await sw.WriteLineAsync(
+                "No Half-Measures: If I fix a performance/security issue in one block, I will scan and fix it in all related blocks.");
             await sw.WriteLineAsync("</ImportantReminder>\n\n---");
 
             await sw.WriteLineAsync("## 3. 项目规模 with 统计");
@@ -341,11 +370,14 @@ public partial class FolderDocumentGenerator
     /// 递归构建文件目录树。
     /// </summary>
     private async Task BuildTreeRecursiveAsync(string currentPath, string rootPath, string indent, TextWriter tw,
-        List<(Regex Regex, string Pattern)> includeRegexes)
+        List<(Regex Regex, string Pattern)> includeRegexes,
+        List<string> excludedFolders = null) // <--- 原因: 新增参数，目录树渲染时过滤用户指定文件夹
     {
-        // [Modified] 使用静态 DefaultEnumOptions
         var dirs = Directory.EnumerateDirectories(currentPath, "*", DefaultEnumOptions)
             .Where(d => !ExcludedFolders.Contains(Path.GetFileName(d)))
+            .Where(d => excludedFolders == null ||
+                        !excludedFolders.Contains(Path.GetFileName(d),
+                            StringComparer.OrdinalIgnoreCase)) // <--- 原因: 在静态黑名单之后追加用户动态黑名单过滤
             .OrderBy(d => d).ToList();
 
         var files = Directory.EnumerateFiles(currentPath, "*", DefaultEnumOptions)
@@ -375,7 +407,7 @@ public partial class FolderDocumentGenerator
                 if (item.IsDir)
                 {
                     await BuildTreeRecursiveAsync(item.Path, rootPath, indent + (isLast ? "    " : "│   "), tw,
-                        includeRegexes);
+                        includeRegexes, excludedFolders); // <--- 原因: 递归时向下传递 excludedFolders
                 }
             }
             catch (UnauthorizedAccessException)
@@ -394,9 +426,13 @@ public partial class FolderDocumentGenerator
 
     /// <summary>
     /// 处理目录并统计代码行数，同时写入文件内容。
+    /// 支持在所有模式下按类名过滤 C# 文件中的指定类。
     /// </summary>
     private async Task<ProjectStats> ProcessDirectoryWithStatsAsync(string currentPath, string rootPath, TextWriter tw,
-        List<(Regex Regex, string Pattern)> includeRegexes, string taskMode)
+        List<(Regex Regex, string Pattern)> includeRegexes, string taskMode,
+        List<string> excludedClasses = null,
+        List<string> preservedMethods = null,
+        List<string> excludedFolders = null) // <--- 原因: 新增类排除参数，向后兼容（默认 null 即不排除）
     {
         int fileCount = 0;
         long totalLines = 0;
@@ -415,42 +451,97 @@ public partial class FolderDocumentGenerator
 
             try
             {
+                // ── 公共前置：对所有模式下的 .cs 文件执行类排除 ─────────────────
+                // [Original] 无此逻辑块，原代码直接进入 taskMode 分支
+                string preloadedSource = null; // 经类排除处理后的源码（null 表示未预加载，后续按需读取）
+                bool allClassesExcluded = false;
+
+                if (extension == ".cs" && !IsConfigFile(file) && excludedClasses is { Count: > 0 })
+                {
+                    string rawSource = await File.ReadAllTextAsync(file, Encoding.UTF8);
+                    (preloadedSource, allClassesExcluded) =
+                        await RemoveExcludedClassesAsync(rawSource,
+                            excludedClasses); // <--- 原因: 统一在模式分发前完成类过滤，确保 explain/optimize/debug/skeleton 四种模式行为一致
+                }
+
+                if (allClassesExcluded) // <--- 原因: 文件内所有指定类均已排除，写标记注释后跳过，不进入任何模式分支
+                {
+                    await tw.WriteLineAsync("// [已排除] 该文件中所有指定的类均已被过滤，不予展示。");
+                    fileCount++;
+                    Console.WriteLine($"[已排除] {relPath}");
+                    continue;
+                }
+                // ─────────────────────────────────────────────────────────────────
+
                 if (!IsConfigFile(file) && taskMode == "explain")
                 {
                     await tw.WriteLineAsync($"```{GetFileExtension(file)}");
-                    
-                    // 优化：显式指定 FileStreamOptions 提高异步IO性能，减少隐式分配
-                    await using var fs = new FileStream(file, new FileStreamOptions 
-                    { 
-                        Mode = FileMode.Open, 
-                        Access = FileAccess.Read, 
-                        Share = FileShare.Read, 
-                        Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-                    });
-                    
-                    using var streamReader = new StreamReader(fs, Encoding.UTF8);
-                    
-                    // <--- 原因: 删除页码行数 (不再维护 currentFileLine)
-                    while (await streamReader.ReadLineAsync() is { } line)
+
+                    if (preloadedSource != null) // <--- 原因: 类排除已预加载了源码，改用 StringReader 避免二次读取文件
+                    {
+                        using var sr = new StringReader(preloadedSource);
+                        while (await sr.ReadLineAsync() is { } line)
+                        {
+                            await tw.WriteLineAsync(line.AsMemory().TrimEnd());
+                            totalLines++;
+                        }
+                    }
+                    else
+                    {
+                        // [Original] 原始 explain 路径保持不变：直接流式读取文件
+                        await using var fs = new FileStream(file, new FileStreamOptions
+                        {
+                            Mode = FileMode.Open,
+                            Access = FileAccess.Read,
+                            Share = FileShare.Read,
+                            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                        });
+
+                        using var streamReader = new StreamReader(fs, Encoding.UTF8);
+
+                        while (await streamReader.ReadLineAsync() is { } line)
+                        {
+                            await tw.WriteLineAsync(line.AsMemory().TrimEnd());
+                            totalLines++;
+                        }
+                    }
+
+                    await tw.WriteLineAsync("```");
+                }
+                else if (taskMode == "skeleton" && extension == ".cs" && !IsConfigFile(file))
+                {
+                    // [Original] string skeleton = await ExtractCSharpSkeletonAsync(file);
+                    string sourceForSkeleton = preloadedSource ?? await File.ReadAllTextAsync(file, Encoding.UTF8);
+                    string skeleton =
+                        await ExtractCSharpSkeletonAsync(sourceForSkeleton,
+                            preservedMethods); // <--- 原因: 优先使用已过滤的 preloadedSource，避免重复读取文件，同时与签名变更保持一致
+                    skeleton = CompressBlankLines(skeleton);
+
+                    string fence = skeleton.Contains("```") ? "~~~~" : "```";
+                    await tw.WriteLineAsync($"{fence}csharp");
+
+                    using var sr = new StringReader(skeleton);
+                    while (await sr.ReadLineAsync() is { } line)
                     {
                         await tw.WriteLineAsync(line.AsMemory().TrimEnd());
                         totalLines++;
                     }
 
-                    await tw.WriteLineAsync("```");
+                    await tw.WriteLineAsync(fence);
                 }
                 else
                 {
-                    string content = await File.ReadAllTextAsync(file);
+                    // [Original] string content = await File.ReadAllTextAsync(file);
+                    string content = preloadedSource ?? await File.ReadAllTextAsync(file); // <--- 原因: 同上，优先复用预加载结果
                     if (IsConfigFile(file)) content = SanitizeSensitiveInfo(content);
                     if (taskMode != "explain") content = StripComments(content, extension);
+                    content = CompressBlankLines(content);
 
                     string fence = content.Contains("```") ? "~~~~" : "```";
                     await tw.WriteLineAsync($"{fence}{GetFileExtension(file)}");
 
                     using var sr = new StringReader(content);
-                    
-                    // <--- 原因: 删除页码行数 (不再维护 lineNum)
+
                     while (await sr.ReadLineAsync() is { } line)
                     {
                         await tw.WriteLineAsync(line.AsMemory().TrimEnd());
@@ -471,19 +562,71 @@ public partial class FolderDocumentGenerator
 
         var directories = Directory.EnumerateDirectories(currentPath, "*", DefaultEnumOptions)
             .Where(d => !ExcludedFolders.Contains(Path.GetFileName(d)))
+            .Where(d => excludedFolders == null ||
+                        !excludedFolders.Contains(Path.GetFileName(d),
+                            StringComparer.OrdinalIgnoreCase)) // <--- 原因: 与 BuildTreeRecursiveAsync 保持一致，双层过滤
             .OrderBy(d => d);
 
         foreach (var directory in directories)
         {
             if (IsPathIncluded(GetRelativePath(directory, rootPath), includeRegexes, true))
             {
-                var subStats = await ProcessDirectoryWithStatsAsync(directory, rootPath, tw, includeRegexes, taskMode);
+                var subStats = await ProcessDirectoryWithStatsAsync(directory, rootPath, tw, includeRegexes, taskMode,
+                    excludedClasses, preservedMethods, excludedFolders);
                 fileCount += subStats.FileCount;
                 totalLines += subStats.LineCount;
             }
         }
 
         return new ProjectStats(fileCount, totalLines);
+    }
+
+    /// <summary>
+    /// 将传入的 C# 源码字符串转为方法体已剥离的骨架字符串。
+    /// 签名改为接收已读取（且经过类排除处理）的 source，避免重复 IO。
+    /// </summary>
+    private static async Task<string> ExtractCSharpSkeletonAsync(
+        string source,
+        IReadOnlyCollection<string> preservedMethods = null) // <--- 原因: 将保留列表传入 SkeletonRewriter，实现选择性保留
+    {
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = await tree.GetRootAsync();
+        var rewriter = new SkeletonRewriter(preservedMethods);
+        var skeletonRoot = rewriter.Visit(root);
+        return skeletonRoot.ToFullString();
+    }
+
+    /// <summary>
+    /// 解析 C# 源码，移除名称在 excludedClasses 列表中的类声明，并返回处理后的源码。
+    /// </summary>
+    /// <param name="source">原始 C# 源码字符串</param>
+    /// <param name="excludedClasses">需要排除的类名集合</param>
+    /// <returns>过滤后的源码，以及是否所有类均已被排除的标志</returns>
+    private static async Task<(string FilteredSource, bool AllExcluded)> RemoveExcludedClassesAsync(
+        string source, IReadOnlyCollection<string> excludedClasses)
+    {
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = await tree.GetRootAsync();
+
+        // 统计原始源码中有多少个类名命中了排除列表（避免把无类的文件误判为"全排除"）
+        int originalMatchCount = root.DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .Count(c => excludedClasses.Contains(c.Identifier.ValueText)); // <--- 原因: 仅统计命中项，区分"无类文件"与"全排除文件"
+
+        var rewriter = new ClassRemovalRewriter(excludedClasses);
+        var newRoot = rewriter.Visit(root);
+        string filtered = newRoot.ToFullString();
+
+        int remainingClassCount = newRoot.DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .Count();
+
+        // 只有：原来有命中的类 && 现在一个类都不剩，才认为"全部排除"
+        bool allExcluded =
+            originalMatchCount > 0 &&
+            remainingClassCount == 0; // <--- 原因: 双重条件，防止将本身就没有 class 的文件（如纯顶层语句的 Program.cs）误判为全排除
+
+        return (filtered, allExcluded);
     }
 
     /// <summary>
@@ -507,6 +650,7 @@ public partial class FolderDocumentGenerator
             {
                 if (c is '\r' or '\n') sb.Append(c);
             }
+
             return sb.ToString();
         });
     }
@@ -555,9 +699,10 @@ public partial class FolderDocumentGenerator
                 catch (RegexMatchTimeoutException)
                 {
                     // <--- 原因: 如果匹配超时，保留原样或标记，防止程序崩溃
-                    continue; 
+                    continue;
                 }
             }
+
             sb.AppendLine(processedLine);
         }
 
@@ -583,5 +728,276 @@ public partial class FolderDocumentGenerator
             ".yaml" or ".yml" => "yaml",
             _ => "text"
         };
+    }
+
+    // [Original]
+// private sealed class SkeletonRewriter : CSharpSyntaxRewriter
+// {
+//     private static string BuildBlockHint(BlockSyntax body)
+//     {
+//         ...（仅提取 calls / return / throws，共3类）
+//     }
+//     public override SyntaxNode VisitMethodDeclaration(MethodDeclarationSyntax node) { ... }
+//     public override SyntaxNode VisitConstructorDeclaration(...) { ... }
+//     public override SyntaxNode VisitDestructorDeclaration(...) { ... }
+//     public override SyntaxNode VisitAccessorDeclaration(...) { ... }
+//     public override SyntaxNode VisitOperatorDeclaration(...) { ... }
+// }
+
+    private sealed class SkeletonRewriter : CSharpSyntaxRewriter
+    {
+        private readonly HashSet<string> _preserved; // <--- 原因: 存储需要保留完整实现的标识符集合（类名/方法名/类名.方法名）
+        private string _currentClassName; // <--- 原因: 追踪当前正在访问的类名，支持 "ClassName.MethodName" 精确匹配及嵌套类场景
+
+        private static readonly HashSet<string> LinqOperatorNames = new(StringComparer.Ordinal)
+        {
+            "Where", "Select", "SelectMany", "GroupBy", "OrderBy", "OrderByDescending",
+            "ThenBy", "Join", "Any", "All", "First", "FirstOrDefault", "Single",
+            "SingleOrDefault", "Count", "Sum", "Min", "Max", "Distinct", "ToList",
+            "ToArray", "ToDictionary", "ToFrozenSet", "Aggregate", "Skip", "Take",
+            "Concat", "Zip", "Except", "Intersect", "Union"
+        }; // <--- 原因: 编译期常量集合，避免每次调用 BuildBlockHint 时重建，O(1) 查找
+
+        public SkeletonRewriter(IEnumerable<string> preservedMethods = null)
+        {
+            _preserved = preservedMethods != null
+                ? new HashSet<string>(preservedMethods, StringComparer.Ordinal)
+                : [];
+        }
+
+        // ── 判断当前节点是否应保留完整实现 ────────────────────────────────────
+        private bool ShouldPreserve(string simpleName)
+        {
+            if (_preserved.Count == 0) return false;
+            if (_preserved.Contains(simpleName)) return true; // 匹配裸方法名/类名
+            if (_currentClassName != null &&
+                _preserved.Contains(_currentClassName + "." + simpleName)) return true; // 匹配 ClassName.MethodName
+            return false;
+        }
+
+        // ── BuildBlockHint：增强版，从 BlockSyntax 中提取7类语义线索 ───────────
+        private static string BuildBlockHint(BlockSyntax body)
+        {
+            if (body == null || body.Statements.Count == 0) return "/* empty */";
+
+            var parts = new List<string>(7);
+
+            // 1. 调用的方法名（去重，取前6个）
+            var calls = body.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(inv => inv.Parent is not ArgumentSyntax) // <--- 原因: 排除作为参数嵌套的调用（如 Math.Max(0, x + delta)），只保留顶层调用语句，减少噪音
+                .Select(inv =>
+                {
+                    string receiver = inv.Expression.ToString();
+                    string args = string.Join(", ", inv.ArgumentList.Arguments.Select(a => a.ToString())); // <--- 原因: 展开实参列表，让 AI 能看到传了哪些变量，而不只是方法名
+                    string full = args.Length > 0 ? $"{receiver}({args})" : $"{receiver}()";
+
+                    // 超长时截断参数部分，保留 receiver 可读性
+                    return full.Length <= 80 ? full : $"{receiver}(...)"; // <--- 原因: 超过 80 字符时折叠参数，避免 hint 行过长影响 AI 解析
+                })
+                .Where(n => n.Length > 0 && !LinqOperatorNames.Contains( // 用方法名部分做 LINQ 过滤
+                    n.Contains('(') ? n[..n.IndexOf('(')] .Split('.').Last() : n))
+                .Distinct()
+                .Take(6);
+            var callStr = string.Join(", ", calls);
+            if (callStr.Length > 0) parts.Add($"calls: {callStr}");
+
+            // 2. LINQ 算子链（帮助 AI 理解数据转换意图） // <--- 原因: 新增分类，LINQ 链是骨架中信息损失最严重的部分
+            var linqOps = body.DescendantNodes()
+                .OfType<MemberAccessExpressionSyntax>()
+                .Select(m => m.Name.Identifier.ValueText)
+                .Where(n => LinqOperatorNames.Contains(n))
+                .Distinct()
+                .Take(5);
+            var linqStr = string.Join("→", linqOps);
+            if (linqStr.Length > 0) parts.Add($"linq: {linqStr}");
+
+            // 3. 实例化的类型（帮助 AI 理解依赖的对象图） // <--- 原因: new T() 是理解方法职责的关键，原版完全缺失
+            var newTypes = body.DescendantNodes()
+                .OfType<ObjectCreationExpressionSyntax>()
+                .Select(o => o.Type.ToString())
+                .Where(t => t.Length is > 0 and <= 35)
+                .Distinct()
+                .Take(3);
+            var newStr = string.Join(", ", newTypes);
+            if (newStr.Length > 0) parts.Add($"new: {newStr}");
+
+            // 4. foreach 的迭代源（帮助 AI 理解遍历对象） // <--- 原因: 新增分类，遍历的是什么集合直接决定方法的数据处理逻辑
+            var foreachSources = body.DescendantNodes()
+                .OfType<ForEachStatementSyntax>()
+                .Select(f => f.Expression.ToString().Trim())
+                .Where(e => e.Length is > 0 and <= 30)
+                .Distinct()
+                .Take(2);
+            var foreachStr = string.Join(", ", foreachSources);
+            if (foreachStr.Length > 0) parts.Add($"foreach: {foreachStr}");
+
+            // 5. 关键条件分支（仅保留短表达式，避免噪音） // <--- 原因: 新增分类，if 的判断条件往往是理解方法分支逻辑的核心
+            var conditions = body.DescendantNodes()
+                .OfType<IfStatementSyntax>()
+                .Select(i => i.Condition.ToString().Trim())
+                .Where(c => c.Length is > 0 and <= 45)
+                .Distinct()
+                .Take(2);
+            var condStr = string.Join(" | ", conditions);
+            if (condStr.Length > 0) parts.Add($"if: {condStr}");
+
+            // 6. return 表达式
+            var returns = body.DescendantNodes()
+                .OfType<ReturnStatementSyntax>()
+                .Where(r => r.Expression != null)
+                .Select(r => r.Expression!.ToString().Trim())
+                .Where(e => e.Length is > 0 and <= 60)
+                .Distinct()
+                .Take(2);
+            var retStr = string.Join(" | ", returns);
+            if (retStr.Length > 0) parts.Add($"→ {retStr}");
+
+            // 7. throw 类型
+            var throwTypes = body.DescendantNodes()
+                .Select<SyntaxNode, string>(n => n switch
+                {
+                    ThrowStatementSyntax ts =>
+                        (ts.Expression as ObjectCreationExpressionSyntax)?.Type.ToString() ?? "",
+                    ThrowExpressionSyntax te =>
+                        (te.Expression as ObjectCreationExpressionSyntax)?.Type.ToString() ?? "",
+                    _ => ""
+                })
+                .Where(t => t.Length > 0)
+                .Distinct()
+                .Take(2);
+            var throwStr = string.Join(", ", throwTypes);
+            if (throwStr.Length > 0) parts.Add($"throws: {throwStr}");
+
+            return parts.Count > 0 ? $"/* {string.Join(" | ", parts)} */" : "/* ... */";
+        }
+
+        private static string BuildExpressionHint(ArrowExpressionClauseSyntax arrow)
+        {
+            var expr = arrow.Expression.ToString().Trim().Replace("*/", "*\\/");
+            if (expr.Length > 120) expr = expr[..120] + "...";
+            return $"/* => {expr} */";
+        }
+
+        private static BlockSyntax WrapInStubBlock(string hint) =>
+            SyntaxFactory.Block()
+                .WithOpenBraceToken(
+                    SyntaxFactory.Token(SyntaxKind.OpenBraceToken)
+                        .WithTrailingTrivia(SyntaxFactory.TriviaList(
+                            SyntaxFactory.Space,
+                            SyntaxFactory.Comment(hint),
+                            SyntaxFactory.Space)))
+                .WithCloseBraceToken(SyntaxFactory.Token(SyntaxKind.CloseBraceToken));
+
+        private static BlockSyntax StubFromBlock(BlockSyntax body) => WrapInStubBlock(BuildBlockHint(body));
+
+        private static BlockSyntax StubFromArrow(ArrowExpressionClauseSyntax a) =>
+            WrapInStubBlock(BuildExpressionHint(a));
+
+        // ── 追踪当前类名，支持嵌套类（入栈/出栈模式） ───────────────────────────
+        public override SyntaxNode VisitClassDeclaration(ClassDeclarationSyntax node)
+        {
+            if (ShouldPreserve(node.Identifier.ValueText))
+                return node; // <--- 原因: 类名命中保留列表，整个类节点原样返回，不递归重写任何成员
+
+            var prev = _currentClassName;
+            _currentClassName = node.Identifier.ValueText; // <--- 原因: 入栈，使子节点的 ShouldPreserve 能拼接 ClassName.MethodName
+            var result = base.VisitClassDeclaration(node);
+            _currentClassName = prev; // <--- 原因: 出栈，正确处理嵌套类场景
+            return result;
+        }
+
+        public override SyntaxNode VisitMethodDeclaration(MethodDeclarationSyntax node)
+        {
+            if (ShouldPreserve(node.Identifier.ValueText)) return node; // <--- 原因: 方法名命中，保留完整实现
+
+            if (node.Body != null)
+                return node.WithBody(StubFromBlock(node.Body));
+            if (node.ExpressionBody != null)
+                return node.WithExpressionBody(null).WithSemicolonToken(default)
+                    .WithBody(StubFromArrow(node.ExpressionBody));
+            return base.VisitMethodDeclaration(node);
+        }
+
+        public override SyntaxNode VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
+        {
+            if (ShouldPreserve(node.Identifier.ValueText)) return node;
+
+            if (node.Body != null)
+                return node.WithBody(StubFromBlock(node.Body));
+            if (node.ExpressionBody != null)
+                return node.WithExpressionBody(null).WithSemicolonToken(default)
+                    .WithBody(StubFromArrow(node.ExpressionBody));
+            return base.VisitConstructorDeclaration(node);
+        }
+
+        public override SyntaxNode VisitDestructorDeclaration(DestructorDeclarationSyntax node)
+        {
+            if (ShouldPreserve(node.Identifier.ValueText)) return node;
+
+            if (node.Body != null)
+                return node.WithBody(StubFromBlock(node.Body));
+            if (node.ExpressionBody != null)
+                return node.WithExpressionBody(null).WithSemicolonToken(default)
+                    .WithBody(StubFromArrow(node.ExpressionBody));
+            return base.VisitDestructorDeclaration(node);
+        }
+
+        public override SyntaxNode VisitAccessorDeclaration(AccessorDeclarationSyntax node)
+        {
+            if (ShouldPreserve(node.Keyword.ValueText))
+                return
+                    node; // <--- 原因: AccessorDeclarationSyntax 无 Identifier 属性，属性访问器以 Keyword（get/set/init）标识，必须改用 Keyword.ValueText
+
+            if (node.Body != null)
+                return node.WithBody(StubFromBlock(node.Body));
+            if (node.ExpressionBody != null)
+                return node.WithExpressionBody(null).WithSemicolonToken(default)
+                    .WithBody(StubFromArrow(node.ExpressionBody));
+            return base.VisitAccessorDeclaration(node);
+        }
+
+        public override SyntaxNode VisitOperatorDeclaration(OperatorDeclarationSyntax node)
+        {
+            if (ShouldPreserve(node.OperatorToken.ValueText))
+                return node; // <--- 原因: OperatorDeclarationSyntax 无 Identifier 属性，运算符以 OperatorToken 标识（如 +、-、==）
+
+            if (node.Body != null)
+                return node.WithBody(StubFromBlock(node.Body));
+            if (node.ExpressionBody != null)
+                return node.WithExpressionBody(null).WithSemicolonToken(default)
+                    .WithBody(StubFromArrow(node.ExpressionBody));
+            return base.VisitOperatorDeclaration(node);
+        }
+    }
+
+    private static string CompressBlankLines(string content) // <--- Strategy B：连续空行压缩为单行，减少无效 Token
+    {
+        if (string.IsNullOrEmpty(content)) return content;
+        return MultipleBlankLinesRegex().Replace(content, "\n\n");
+    }
+
+    [GeneratedRegex(@"\n{3,}", RegexOptions.None)]
+    private static partial Regex MultipleBlankLinesRegex();
+
+    /// <summary>
+    /// Roslyn 语法重写器：按类名从语法树中移除指定的类声明节点。
+    /// 在 Visit 中返回 null 即代表删除该节点（Roslyn 标准做法）。
+    /// </summary>
+    private sealed class ClassRemovalRewriter : CSharpSyntaxRewriter
+    {
+        private readonly HashSet<string> _excludedNames; // <--- 原因: 使用 HashSet 保证 O(1) 的类名查找
+
+        public ClassRemovalRewriter(IEnumerable<string> excludedNames)
+        {
+            _excludedNames = new HashSet<string>(excludedNames, StringComparer.Ordinal);
+        }
+
+        public override SyntaxNode VisitClassDeclaration(ClassDeclarationSyntax node)
+        {
+            if (_excludedNames.Contains(node.Identifier.ValueText))
+                return null; // <--- 原因: Roslyn Rewriter 中返回 null 等价于从父节点的子列表中删除该节点
+            return base.VisitClassDeclaration(node); // 未命中则递归处理其内部（支持嵌套类场景）
+        }
     }
 }
