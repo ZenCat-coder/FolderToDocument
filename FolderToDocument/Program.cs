@@ -11,16 +11,22 @@ try
     //string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoPlatform";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoPlatformServer";
-    //string folderPath = @"E:\MyCode\C#\MyReview\DelegateTest";
+    //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPao.SanJieWenDao";
     string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoGroupGame";
 
 
     // 2. 配置：包含模式（推荐只包含主模块，防止 Token 溢出）
     var includedPatterns = new List<string>
     {
-        //"PropPurchaseModule/**",
-        //"ZYPropsModule/**",
-        "ZYSignItDailyModule/**",
+        "ZYSlaveGameModule/**",
+        // "ZYModel/**",
+        // "ZYWdBusinessModule/**",
+        // "ZYBasisBusinessModule/**",
+        // "ZYBotCoreModule/**",
+        // "ZYRepositoryModule/**",
+        // "ZYWdCombatModule/**",
+        // "ZYWdCommonModule/**",
+        // "ZYWdConfigManagerModule/**",
         //"*.sln",
         //"global.json",
     };
@@ -34,7 +40,7 @@ try
     // 新增：排除整个文件夹（文件夹名精确匹配，大小写不敏感，该文件夹下所有文件均不输出）
     var excludedFolders = new List<string>
     {
-        "Tests"
+        //"Tests"
     };
     
 
@@ -66,8 +72,8 @@ try
     // 5. 配置：自定义 AI 专项要求 (这些会直接出现在 MD 文件的头部指令中)
     var myRequirements = new List<string>
     {
-        "mock都是根据代码逻辑来测试的，如果我代码逻辑不对，那测试的也不对，比如这个抽签隔日零点没有刷新，只有用实战的方式测出来，我怕有其他bug。这mock好像也不是万能的",
-        "先不修改代码，明白代码所用框架及修改目标所需要用的模型有无缺少，如果缺乏必要相关代码，告诉我提供。",
+        "奴隶工作完成后没有更新奴隶信息中的状态，导致继续派奴隶工作指令异常",
+        "不修改代码，明白代码所用框架及修改目标所需模型有无缺少，如果缺乏必要相关代码，告诉我提供。如果修改代码可能影响哪些功能，哪些功能需要同步修改，完整列出",
         "使用中文回答"
     };
 

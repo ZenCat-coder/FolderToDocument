@@ -185,20 +185,18 @@ public partial class FolderDocumentGenerator
                 "- RULE_2: You MUST provide the ENTIRE method or logic block. DO NOT use snippets (e.g., `...`) or partial updates.");
             await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
             await sw.WriteLineAsync(
-                "- RULE_4: You MUST keep the original code commented out (e.g., `// [Original] code...` or `/* */`) immediately before the new code. DO NOT DELETE the original logic.");
+                "- RULE_4: Only functional logic changes require the (// <--- 原因) comment. DO NOT add this comment to justify why you DID NOT change the code.");
             await sw.WriteLineAsync(
-                "- RULE_5: Only functional logic changes require the (// <--- 原因) comment. DO NOT add this comment to justify why you DID NOT change the code.");
+                "- RULE_5: [STRICT] If the executable logic of a method is not changed, DO NOT output it. Adding, removing, or modifying comments/XML docs ALONE does not count as a change.");
             await sw.WriteLineAsync(
-                "- RULE_6: [STRICT] If the executable logic of a method is not changed, DO NOT output it. Adding, removing, or modifying comments/XML docs ALONE does not count as a change.");
+                "- RULE_6: CONSISTENCY ENFORCEMENT: If an optimization or fix applies to multiple locations (even in different methods or files), you MUST include ALL affected blocks. DO NOT optimize one and leave the others in their original state.");
             await sw.WriteLineAsync(
-                "- RULE_7: CONSISTENCY ENFORCEMENT: If an optimization or fix applies to multiple locations (even in different methods or files), you MUST include ALL affected blocks. DO NOT optimize one and leave the others in their original state.");
+                "- RULE_7: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
+            await sw.WriteLineAsync("- RULE_8: You MUST answer in Chinese.");
             await sw.WriteLineAsync(
-                "- RULE_8: CATEGORIZED OUTPUT: Group findings into SECURITY, PERFORMANCE, LOGIC, ARCHITECTURE.");
-            await sw.WriteLineAsync("- RULE_9: You MUST answer in Chinese.");
+                "- RULE_9: XML documentation (/// <summary>) should ONLY be added/updated if the method's logic was actually modified.");
             await sw.WriteLineAsync(
-                "- RULE_10: XML documentation (/// <summary>) should ONLY be added/updated if the method's logic was actually modified.");
-            await sw.WriteLineAsync(
-                "- RULE_11: ABSOLUTELY FORBIDDEN to output a method just to provide an 'analysis' or 'confirmation' if no code was improved.");
+                "- RULE_10: ABSOLUTELY FORBIDDEN to output a method just to provide an 'analysis' or 'confirmation' if no code was improved.");
             await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
 
             await sw.WriteLineAsync($"# {projectName} 项目文档");
@@ -432,13 +430,13 @@ public partial class FolderDocumentGenerator
         List<(Regex Regex, string Pattern)> includeRegexes, string taskMode,
         List<string> excludedClasses = null,
         List<string> preservedMethods = null,
-        List<string> excludedFolders = null) // <--- 原因: 新增类排除参数，向后兼容（默认 null 即不排除）
+        List<string> excludedFolders = null)
     {
         int fileCount = 0;
         long totalLines = 0;
 
         var files = Directory.EnumerateFiles(currentPath, "*", DefaultEnumOptions)
-            .Where(f => !ExcludedExtensions.Contains(Path.GetExtension(f).ToLower()))
+            .Where(f => !ExcludedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant())) // <--- 原因：统一字符串规范
             .Where(path => IsPathIncluded(GetRelativePath(path, rootPath), includeRegexes, false))
             .OrderBy(f => f);
 
@@ -451,44 +449,34 @@ public partial class FolderDocumentGenerator
 
             try
             {
-                // ── 公共前置：对所有模式下的 .cs 文件执行类排除 ─────────────────
-                // [Original] 无此逻辑块，原代码直接进入 taskMode 分支
-                string preloadedSource = null; // 经类排除处理后的源码（null 表示未预加载，后续按需读取）
+                string preloadedSource = null;
                 bool allClassesExcluded = false;
 
                 if (extension == ".cs" && !IsConfigFile(file) && excludedClasses is { Count: > 0 })
                 {
                     string rawSource = await File.ReadAllTextAsync(file, Encoding.UTF8);
-                    (preloadedSource, allClassesExcluded) =
-                        await RemoveExcludedClassesAsync(rawSource,
-                            excludedClasses); // <--- 原因: 统一在模式分发前完成类过滤，确保 explain/optimize/debug/skeleton 四种模式行为一致
+                    (preloadedSource, allClassesExcluded) = await RemoveExcludedClassesAsync(rawSource, excludedClasses);
                 }
 
-                if (allClassesExcluded) // <--- 原因: 文件内所有指定类均已排除，写标记注释后跳过，不进入任何模式分支
+                if (allClassesExcluded)
                 {
                     await tw.WriteLineAsync("// [已排除] 该文件中所有指定的类均已被过滤，不予展示。");
                     fileCount++;
                     Console.WriteLine($"[已排除] {relPath}");
                     continue;
                 }
-                // ─────────────────────────────────────────────────────────────────
 
                 if (!IsConfigFile(file) && taskMode == "explain")
                 {
                     await tw.WriteLineAsync($"```{GetFileExtension(file)}");
 
-                    if (preloadedSource != null) // <--- 原因: 类排除已预加载了源码，改用 StringReader 避免二次读取文件
+                    if (preloadedSource != null)
                     {
                         using var sr = new StringReader(preloadedSource);
-                        while (await sr.ReadLineAsync() is { } line)
-                        {
-                            await tw.WriteLineAsync(line.AsMemory().TrimEnd());
-                            totalLines++;
-                        }
+                        totalLines += await WriteOptimizedContentAsync(sr, tw); // <--- 原因：重构复用流式去空行管线
                     }
                     else
                     {
-                        // [Original] 原始 explain 路径保持不变：直接流式读取文件
                         await using var fs = new FileStream(file, new FileStreamOptions
                         {
                             Mode = FileMode.Open,
@@ -498,55 +486,35 @@ public partial class FolderDocumentGenerator
                         });
 
                         using var streamReader = new StreamReader(fs, Encoding.UTF8);
-
-                        while (await streamReader.ReadLineAsync() is { } line)
-                        {
-                            await tw.WriteLineAsync(line.AsMemory().TrimEnd());
-                            totalLines++;
-                        }
+                        totalLines += await WriteOptimizedContentAsync(streamReader, tw); // <--- 原因：重构复用流式去空行管线
                     }
 
                     await tw.WriteLineAsync("```");
                 }
                 else if (taskMode == "skeleton" && extension == ".cs" && !IsConfigFile(file))
                 {
-                    // [Original] string skeleton = await ExtractCSharpSkeletonAsync(file);
                     string sourceForSkeleton = preloadedSource ?? await File.ReadAllTextAsync(file, Encoding.UTF8);
-                    string skeleton =
-                        await ExtractCSharpSkeletonAsync(sourceForSkeleton,
-                            preservedMethods); // <--- 原因: 优先使用已过滤的 preloadedSource，避免重复读取文件，同时与签名变更保持一致
-                    skeleton = CompressBlankLines(skeleton);
+                    string skeleton = await ExtractCSharpSkeletonAsync(sourceForSkeleton, preservedMethods);
 
                     string fence = skeleton.Contains("```") ? "~~~~" : "```";
                     await tw.WriteLineAsync($"{fence}csharp");
 
                     using var sr = new StringReader(skeleton);
-                    while (await sr.ReadLineAsync() is { } line)
-                    {
-                        await tw.WriteLineAsync(line.AsMemory().TrimEnd());
-                        totalLines++;
-                    }
+                    totalLines += await WriteOptimizedContentAsync(sr, tw); // <--- 原因：重构复用流式去空行管线
 
                     await tw.WriteLineAsync(fence);
                 }
                 else
                 {
-                    // [Original] string content = await File.ReadAllTextAsync(file);
-                    string content = preloadedSource ?? await File.ReadAllTextAsync(file); // <--- 原因: 同上，优先复用预加载结果
+                    string content = preloadedSource ?? await File.ReadAllTextAsync(file, Encoding.UTF8);
                     if (IsConfigFile(file)) content = SanitizeSensitiveInfo(content);
                     if (taskMode != "explain") content = StripComments(content, extension);
-                    content = CompressBlankLines(content);
 
                     string fence = content.Contains("```") ? "~~~~" : "```";
                     await tw.WriteLineAsync($"{fence}{GetFileExtension(file)}");
 
                     using var sr = new StringReader(content);
-
-                    while (await sr.ReadLineAsync() is { } line)
-                    {
-                        await tw.WriteLineAsync(line.AsMemory().TrimEnd());
-                        totalLines++;
-                    }
+                    totalLines += await WriteOptimizedContentAsync(sr, tw); // <--- 原因：重构复用流式去空行管线
 
                     await tw.WriteLineAsync(fence);
                 }
@@ -562,9 +530,7 @@ public partial class FolderDocumentGenerator
 
         var directories = Directory.EnumerateDirectories(currentPath, "*", DefaultEnumOptions)
             .Where(d => !ExcludedFolders.Contains(Path.GetFileName(d)))
-            .Where(d => excludedFolders == null ||
-                        !excludedFolders.Contains(Path.GetFileName(d),
-                            StringComparer.OrdinalIgnoreCase)) // <--- 原因: 与 BuildTreeRecursiveAsync 保持一致，双层过滤
+            .Where(d => excludedFolders == null || !excludedFolders.Contains(Path.GetFileName(d), StringComparer.OrdinalIgnoreCase))
             .OrderBy(d => d);
 
         foreach (var directory in directories)
@@ -581,6 +547,33 @@ public partial class FolderDocumentGenerator
         return new ProjectStats(fileCount, totalLines);
     }
 
+    // <--- 原因：新增的高性能流拦截器，使用 ReadOnlyMemory<char> 直接干预，彻底消灭末尾空格和超过一次的空白行。
+    private async Task<long> WriteOptimizedContentAsync(TextReader sr, TextWriter tw)
+    {
+        long lines = 0;
+        bool previousLineWasEmpty = false;
+
+        while (await sr.ReadLineAsync() is { } line)
+        {
+            var trimmedLine = line.AsMemory().TrimEnd();
+            bool isLineEmpty = trimmedLine.Length == 0;
+
+            if (isLineEmpty)
+            {
+                if (previousLineWasEmpty) continue; // 直接截断连续空白行产生
+                previousLineWasEmpty = true;
+            }
+            else
+            {
+                previousLineWasEmpty = false;
+            }
+
+            await tw.WriteLineAsync(trimmedLine);
+            lines++;
+        }
+        return lines;
+    }
+    
     /// <summary>
     /// 将传入的 C# 源码字符串转为方法体已剥离的骨架字符串。
     /// 签名改为接收已读取（且经过类排除处理）的 source，避免重复 IO。
@@ -640,18 +633,9 @@ public partial class FolderDocumentGenerator
         return CommentStripRegex().Replace(content, m =>
         {
             if (m.Groups[1].Success) return m.Groups[1].Value;
-
-            var valueSpan = m.ValueSpan;
-            if (valueSpan.IndexOfAny('\r', '\n') == -1) return string.Empty;
-
-            // 优化：预分配 StringBuilder 容量，避免扩容开销
-            var sb = new StringBuilder(valueSpan.Length);
-            foreach (var c in valueSpan)
-            {
-                if (c is '\r' or '\n') sb.Append(c);
-            }
-
-            return sb.ToString();
+            
+            // <--- 原因：不再无意义地保留注释段落原有的换行符，从根源上将多行注释切底清空。
+            return string.Empty;
         });
     }
 
@@ -683,30 +667,22 @@ public partial class FolderDocumentGenerator
     {
         if (string.IsNullOrEmpty(content)) return content;
 
-        var lines = content.Split([Environment.NewLine, "\n", "\r"], StringSplitOptions.None);
-        var sb = new StringBuilder(content.Length);
+        string processed = content;
 
-        foreach (var line in lines)
+        foreach (var (pattern, replacement) in SensitivePatterns)
         {
-            string processedLine = line;
-            foreach (var (pattern, replacement) in SensitivePatterns)
+            try
             {
-                try
-                {
-                    // 设置了 100ms 超时的正则在此处可能会抛出异常
-                    processedLine = pattern.Replace(processedLine, replacement);
-                }
-                catch (RegexMatchTimeoutException)
-                {
-                    // <--- 原因: 如果匹配超时，保留原样或标记，防止程序崩溃
-                    continue;
-                }
+                // <--- 原因：摒弃错误的 Split 处理，不再因为 \r\n 形成大量空白行，直接全局正则替换并节约内存分配。
+                processed = pattern.Replace(processed, replacement);
             }
-
-            sb.AppendLine(processedLine);
+            catch (RegexMatchTimeoutException)
+            {
+                continue;
+            }
         }
 
-        return sb.ToString();
+        return processed;
     }
 
     /// <summary>
@@ -970,12 +946,7 @@ public partial class FolderDocumentGenerator
             return base.VisitOperatorDeclaration(node);
         }
     }
-
-    private static string CompressBlankLines(string content) // <--- Strategy B：连续空行压缩为单行，减少无效 Token
-    {
-        if (string.IsNullOrEmpty(content)) return content;
-        return MultipleBlankLinesRegex().Replace(content, "\n\n");
-    }
+    
 
     [GeneratedRegex(@"\n{3,}", RegexOptions.None)]
     private static partial Regex MultipleBlankLinesRegex();
