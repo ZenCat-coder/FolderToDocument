@@ -7,53 +7,99 @@ var generator = new FolderDocumentGenerator();
 
 try
 {
-    // 1. 配置：输入你需要扫描的项目路径
+    // ────────────────────────────────────────────────────────────────────
+    // 【步骤 1】指定要扫描的项目根目录路径
+    // ────────────────────────────────────────────────────────────────────
     //string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoPlatform";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoPlatformServer";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPao.SanJieWenDao";
     string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoGroupGame";
 
-
-    // 2. 配置：包含模式（推荐只包含主模块，防止 Token 溢出）
+    // ────────────────────────────────────────────────────────────────────
+    // 【步骤 2】配置输出范围：哪些目录/文件需要被包含（支持 Glob 语法）
+    //
+    // ⚠️ 与 entryClasses 的联动规则：
+    //   - entryClasses 不为空时：仅控制【非 .cs 文件】（json/xml/csproj 等）的范围
+    //                            .cs 文件的输出由 entryClasses 可达类集合决定
+    //   - entryClasses 为空时：  控制【所有文件】的输出范围（常规行为）
+    // ────────────────────────────────────────────────────────────────────
     var includedPatterns = new List<string>
     {
-        "ZYSlaveGameModule/**",
-        // "ZYModel/**",
-        // "ZYWdBusinessModule/**",
-        // "ZYBasisBusinessModule/**",
-        // "ZYBotCoreModule/**",
-        // "ZYRepositoryModule/**",
-        // "ZYWdCombatModule/**",
-        // "ZYWdCommonModule/**",
-        // "ZYWdConfigManagerModule/**",
+        "ZYUndercoverGameModule/**",
+        //"ZYModel/**",
+        //"ZYWdBusinessModule/**",
+        //"ZYBasisBusinessModule/**",
+        //"ZYBotCoreModule/**",
+        //"ZYRepositoryModule/**",
+        //"ZYWdCombatModule/**",
+        //"ZYWdCommonModule/**",
+        //"ZYWdConfigManagerModule/**",
         //"*.sln",
         //"global.json",
     };
 
-    // 3. 配置：需要从输出中排除的类名（精确匹配，所有模式均生效）
+    // ────────────────────────────────────────────────────────────────────
+    // 【步骤 3】配置入口类过滤（可选）
+    //
+    // 填入关心的类名后，生成的文档将只包含这些类及其所有可达的引用类。
+    // 留空（Count == 0）则不启用，所有文件按 includedPatterns 正常输出。
+    //
+    // 配合 entryClassesMaxDepth 可以精确控制向外扩散的层数：
+    //   -1 = 无限制，追踪所有间接引用（默认）
+    //    0 = 仅保留入口类自身，不展开任何引用
+    //    1 = 入口类 + 直接引用的类
+    //    N = 最多向外扩散 N 轮
+    // ────────────────────────────────────────────────────────────────────
+    var entryClasses = new List<string>
+    {
+        //"WdMarket",
+    };
+    int entryClassesMaxDepth = 1;
+
+    // ────────────────────────────────────────────────────────────────────
+    // 【步骤 4】配置排除项
+    //
+    // excludedClasses：精确匹配类名，命中的类在所有模式下均不输出
+    // excludedFolders：精确匹配文件夹名（大小写不敏感），整个文件夹下的文件均不输出
+    // ────────────────────────────────────────────────────────────────────
     var excludedClasses = new List<string>
     {
-        //"Tests", // 示例：不输出此内嵌类
-        // "FolderDocumentGenerator",
+        //"FolderDocumentGenerator",
     };
-    // 新增：排除整个文件夹（文件夹名精确匹配，大小写不敏感，该文件夹下所有文件均不输出）
+
+    //排除整个文件夹内的项目
     var excludedFolders = new List<string>
     {
-        //"Tests"
+        //"Tests",
     };
-    
 
-    // 4. 配置：skeleton 模式下需要保留完整实现的标识符
-//    支持三种粒度：
-//      "BuildBlockHint"              → 所有类中名为 BuildBlockHint 的方法
-//      "SkeletonRewriter"            → 整个 SkeletonRewriter 类的所有方法
-//      "FolderDocumentGenerator.StripComments" → 精确到某个类的某个方法
+    // ────────────────────────────────────────────────────────────────────
+    // 【步骤 5】配置保留完整实现的标识符（仅 skeleton 模式有效）
+    //
+    // 默认 skeleton 模式会将所有方法体替换为简短提示注释以节省 Token。
+    // 在此列出的标识符将保留完整方法体，支持三种粒度：
+    //   "BuildBlockHint"                      → 所有类中同名方法
+    //   "SkeletonRewriter"                    → 整个类的所有方法
+    //   "FolderDocumentGenerator.StripComments" → 精确到某个类的某个方法
+    // ────────────────────────────────────────────────────────────────────
     var preservedMethods = new List<string>
     {
-        //"BuildBlockHint",
-        // "SkeletonRewriter",
-        // "FolderDocumentGenerator.SanitizeSensitiveInfo",
+        //"BotUtilsService",
+        //"CommonService",
+        //"FolderDocumentGenerator.SanitizeSensitiveInfo",
+    };
+
+    // ────────────────────────────────────────────────────────────────────
+    // 【步骤 6】填写本次交给 AI 处理的业务需求
+    //
+    // 这里写的内容会原文嵌入到生成的 MD 文档头部，AI 读取后按要求处理代码。
+    // ────────────────────────────────────────────────────────────────────
+    var myRequirements = new List<string>
+    {
+        "这里要对三界藏宝阁生成一个api接口，实现网页开发，我会提供一个卧底游戏的webapi供你模仿",
+        "不修改代码，明白代码所用框架及修改目标所需模型有无缺少，如果缺乏必要相关代码，告诉我提供。修改代码是否影响其他功能，完整列出当修改时做相应修改",
+        "使用中文回答"
     };
 
     // 路径合法性校验
@@ -66,38 +112,38 @@ try
     string projectName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar));
     Console.WriteLine($"[任务] 分析项目: {projectName}");
     Console.WriteLine($"[模式] 包含规则: {string.Join(", ", includedPatterns)}");
+    if (entryClasses.Count > 0)
+        Console.WriteLine($"[过滤] 入口类: {string.Join(", ", entryClasses)}");
     Console.WriteLine();
 
-    // 默认输出至: 你的工作目录/Md/项目名/项目名.md
-    // 5. 配置：自定义 AI 专项要求 (这些会直接出现在 MD 文件的头部指令中)
-    var myRequirements = new List<string>
-    {
-        "奴隶工作完成后没有更新奴隶信息中的状态，导致继续派奴隶工作指令异常",
-        "不修改代码，明白代码所用框架及修改目标所需模型有无缺少，如果缺乏必要相关代码，告诉我提供。如果修改代码可能影响哪些功能，哪些功能需要同步修改，完整列出",
-        "使用中文回答"
-    };
-
-    // 6. 执行生成
-    // 传入模式 (optimize 、explain 或 debug) 以及自定义要求
-    // 新增 skeleton 模式，Token 减少约 60-80%：
+    // ────────────────────────────────────────────────────────────────────
+    // 【步骤 7】选择输出模式并执行生成
+    //
+    // taskMode 可选值：
+    //   "optimize"  → 代码优化审阅（默认，输出 Skeleton 以节省 Token）
+    //   "debug"     → 运行时异常排查与修复
+    //   "explain"   → 代码逻辑讲解（保留完整源码，适合入门分析）
+    //   "skeleton"  → 仅输出骨架结构，Token 减少约 60-80%，适合大型项目架构审查
+    // ────────────────────────────────────────────────────────────────────
     string finalPath = await generator.GenerateDocumentAsync(
         folderPath,
         null,
         includedPatterns,
-        taskMode: "debug",
+        taskMode: "optimize",
         customRequirements: myRequirements,
         excludedClasses: excludedClasses,
         preservedMethods: preservedMethods,
-        excludedFolders: excludedFolders // <--- 原因: 接入新参数
+        excludedFolders: excludedFolders,
+        entryClasses: entryClasses,
+        entryClassesMaxDepth: entryClassesMaxDepth
     );
 
-    // 7. 结果反馈
-    Console.WriteLine("\n[🎉 成功] 文档已针对 AI 进行了深度优化并生成！");
+    Console.WriteLine("\n[🎉 成功] 文档已生成！");
     Console.WriteLine($"[📍 文件] {finalPath}");
     Console.WriteLine("\n💡 建议操作：");
-    Console.WriteLine("1. 使用 VS Code 打开此 MD 文件预览效果。");
-    Console.WriteLine("2. 全选内容并粘贴给 AI (如 ChatGPT 或 Claude)。");
-    Console.WriteLine("3. 由于文件包含完整【指令集】和清晰的结构，你可以直接命令 AI 修改具体代码块。");
+    Console.WriteLine("1. 在 myRequirements 列表中填入你的业务需求。");
+    Console.WriteLine("2. 重新运行程序，将生成的 MD 文件全选粘贴给 AI（如 Claude/ChatGPT）。");
+    Console.WriteLine("3. AI 将自动模仿项目的编码风格为你生成新的功能模块。");
 }
 catch (Exception ex)
 {
