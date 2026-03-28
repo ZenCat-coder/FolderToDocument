@@ -6,7 +6,7 @@ using FolderToDocument.Interfaces;
 
 namespace FolderToDocument;
 
-public partial class FolderDocumentGenerator
+public class FolderDocumentGenerator
 {
     private static readonly FrozenSet<string> ExcludedFolders = new[]
     {
@@ -27,8 +27,16 @@ public partial class FolderDocumentGenerator
     private readonly IOutputStrategySelector _strategySelector;
     private readonly IDirectoryTraversalService _directoryTraversal;
 
-    // 构造函数注入所有依赖
-    public FolderDocumentGenerator(
+    /// <summary>
+    /// 构造方法
+    /// </summary>
+    /// <param name="fileSystem"></param>
+    /// <param name="codeAnalysis"></param>
+    /// <param name="contentProcessor"></param>
+    /// <param name="documentWriter"></param>
+    /// <param name="strategySelector"></param>
+    /// <param name="directoryTraversal"></param>
+    private FolderDocumentGenerator(
         IFileSystemService fileSystem,
         ICodeAnalysisService codeAnalysis,
         IContentProcessor contentProcessor,
