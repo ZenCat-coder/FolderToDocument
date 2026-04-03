@@ -26,8 +26,7 @@ try
     // ────────────────────────────────────────────────────────────────────
     var includedPatterns = new List<string>
     {
-        "ZYImageGuessIdiomModule/**",
-        //"ZYModel/**",
+        "ZYMarriageModule/**",
         //"ZYWdBusinessModule/**",
         //"ZYBasisBusinessModule/**",
         //"ZYBotCoreModule/**",
@@ -67,11 +66,9 @@ try
     {
         //"FolderDocumentGenerator",
     };
-
-    //排除整个文件夹内的项目
     var excludedFolders = new List<string>
     {
-        //"Tests",
+        //"WebImpl",
     };
 
     // ────────────────────────────────────────────────────────────────────
@@ -97,11 +94,11 @@ try
     // ────────────────────────────────────────────────────────────────────
     var myRequirements = new List<string>
     {
-        "开始猜成语先出文字，间隔2秒再出图片！",
-        "修改代码之前自己描述一下我的需求",
+        "📜结婚证：H2602081645XXXX放在伴侣后面",
+        "结婚证格式为：H+年月日+几点几分+随机四位数（年份只取后2尾数，譬如2026年取数字26，随机的四位数不得重复，每个结婚证号都是唯一的）",
         "明白代码所用框架及修改目标所需模型有无缺少，如果缺乏必要相关代码，告诉我提供。",
+        "不允许修改代码，用自己的理解描述我的需求，我确认后再修改",
         //"修改代码如果影响其他功能，修改时做相应修改",
-        "不允许修改代码，用自己的理解描述，我确认后再修改，使用中文回答"
     };
 
     // 路径合法性校验
@@ -131,7 +128,7 @@ try
         folderPath,
         null,
         includedPatterns,
-        taskMode: "optimize",
+        taskMode: "debug",
         customRequirements: myRequirements,
         excludedClasses: excludedClasses,
         preservedMethods: preservedMethods,

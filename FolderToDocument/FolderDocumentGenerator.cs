@@ -13,17 +13,11 @@ public class FolderDocumentGenerator
         "bin", "obj", ".vs", ".git", "node_modules", "packages", "Debug", "Release", ".idea", "dist", "build",
         "__pycache__", "Properties"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-
-    private static readonly EnumerationOptions DefaultEnumOptions = new()
-    {
-        MatchCasing = MatchCasing.CaseInsensitive,
-        RecurseSubdirectories = false
-    };
+    
 
     private readonly IFileSystemService _fileSystem;
     private readonly ICodeAnalysisService _codeAnalysis;
     private readonly IContentProcessor _contentProcessor;
-    private readonly IDocumentWriter _documentWriter;
     private readonly IOutputStrategySelector _strategySelector;
     private readonly IDirectoryTraversalService _directoryTraversal;
 
@@ -33,21 +27,18 @@ public class FolderDocumentGenerator
     /// <param name="fileSystem"></param>
     /// <param name="codeAnalysis"></param>
     /// <param name="contentProcessor"></param>
-    /// <param name="documentWriter"></param>
     /// <param name="strategySelector"></param>
     /// <param name="directoryTraversal"></param>
     private FolderDocumentGenerator(
         IFileSystemService fileSystem,
         ICodeAnalysisService codeAnalysis,
         IContentProcessor contentProcessor,
-        IDocumentWriter documentWriter,
         IOutputStrategySelector strategySelector,
         IDirectoryTraversalService directoryTraversal)
     {
         _fileSystem = fileSystem;
         _codeAnalysis = codeAnalysis;
         _contentProcessor = contentProcessor;
-        _documentWriter = documentWriter;
         _strategySelector = strategySelector;
         _directoryTraversal = directoryTraversal;
     }
@@ -57,7 +48,6 @@ public class FolderDocumentGenerator
         new Services.FileSystemService(),
         new Services.CodeAnalysisService(),
         new Services.ContentProcessor(),
-        new Services.DocumentWriter(),
         new Services.OutputStrategySelector(),
         new Services.DirectoryTraversalService())
     {
@@ -105,7 +95,9 @@ public class FolderDocumentGenerator
             reachableClasses = ResolveReachableClasses(graph, entryClasses, entryClassesMaxDepth);
             string depthDesc = entryClassesMaxDepth < 0 ? "无限制" : $"最多 {entryClassesMaxDepth} 轮";
             string preview = string.Join(", ", reachableClasses.Take(10));
-            string more = reachableClasses.Count > 10 ? $"... 等共 {reachableClasses.Count} 个" : $"共 {reachableClasses.Count} 个";
+            string more = reachableClasses.Count > 10
+                ? $"... 等共 {reachableClasses.Count} 个"
+                : $"共 {reachableClasses.Count} 个";
             Console.WriteLine($"[1.5/5] 可达类集合（深度={depthDesc}）：{preview} {more}");
         }
 
@@ -125,42 +117,25 @@ public class FolderDocumentGenerator
             if (taskMode == "explain")
             {
                 await sw.WriteLineAsync("## ROLE: Senior Technical Educator");
-                await sw.WriteLineAsync("## EXPERTISE: C# Programming, Logic Explanation, Software Engineering Fundamentals");
-            }
-            else if (taskMode == "feature")
-            {
-                await sw.WriteLineAsync("## ROLE: Senior .NET Developer & Code Generator");
+                await sw.WriteLineAsync(
+                    "## EXPERTISE: C# Programming, Logic Explanation, Software Engineering Fundamentals");
             }
             else
             {
                 await sw.WriteLineAsync("## ROLE: Senior Software Architect");
-                await sw.WriteLineAsync("## EXPERTISE: .NET 8 and later, High-Performance Systems, Secure Coding, Clean Architecture");
+                await sw.WriteLineAsync(
+                    "## EXPERTISE: .NET 8 and later, High-Performance Systems, Secure Coding, Clean Architecture");
             }
-
-            if (taskMode != "feature")
-            {
-                await sw.WriteLineAsync("## THOUGHT_PROCESS: Mandatory Chain-of-Thought");
-                await sw.WriteLineAsync("- STEP_1: Identify all potential side effects on existing logic.");
-                await sw.WriteLineAsync("- STEP_2: Verify API compatibility (method signatures).");
-                await sw.WriteLineAsync("- STEP_3: Explicitly check for null-references and exception safety.");
-                await sw.WriteLineAsync("- STEP_4: Confirm .NET 8 best practices (Span, Memory, Task).");
-                await sw.WriteLineAsync("- STEP_5: GLOBAL PATTERN SCAN: Search the entire provided context for identical or similar logic patterns and apply the same optimization to ALL of them to ensure consistency.");
-            }
-            else
-            {
-                await sw.WriteLineAsync("## MANDATORY_RULES:");
-                await sw.WriteLineAsync("- RULE_A: 必须继承文档中已有的 BaseConfigService<T> 等基类，禁止自创基类。");
-                await sw.WriteLineAsync("- RULE_B: 必须使用 [CommandHandler] 和 [Command] 特性，不得手动注册指令。");
-                await sw.WriteLineAsync("- RULE_C: 新增指令类必须通过构造函数注入依赖，不得使用 ServiceLocator 模式。");
-                await sw.WriteLineAsync("- RULE_D: 所有数据库操作通过 IDbRepository 进行，命名规范参照已有代码。");
-                await sw.WriteLineAsync("- RULE_E: 多步骤交互必须使用 Session 机制，不得自行维护状态字典。");
-            }
-
+            
+            await sw.WriteLineAsync("## MANDATORY_RULES:");
+            await sw.WriteLineAsync("- RULE_C: 新增指令类必须通过构造函数注入依赖，不得使用 ServiceLocator 模式。");
+            
             // 写入 MODE 和 TASK（与原来相同）
             if (taskMode == "debug")
             {
                 await sw.WriteLineAsync("## MODE: CRITICAL_DEBUG_REPAIR");
-                await sw.WriteLineAsync("- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
+                await sw.WriteLineAsync(
+                    "- TASK_1: Analyze code and pinpoint the root cause of potential runtime exceptions.");
                 await sw.WriteLineAsync("- TASK_2: Provide a thread-safe, memory-efficient fix.");
                 await sw.WriteLineAsync("- TASK_3: Explain why the previous logic failed.");
             }
@@ -168,24 +143,20 @@ public class FolderDocumentGenerator
             {
                 await sw.WriteLineAsync("## MODE: BEGINNER_CODE_WALKTHROUGH");
                 await sw.WriteLineAsync("- TASK_1: Explain the high-level workflow of the code in simple terms.");
-                await sw.WriteLineAsync("- TASK_2: Break down complex methods and explain the purpose of key variables.");
+                await sw.WriteLineAsync(
+                    "- TASK_2: Break down complex methods and explain the purpose of key variables.");
                 await sw.WriteLineAsync("- TASK_3: Highlight common C# patterns used (e.g., async/await, Linq).");
             }
             else if (taskMode == "skeleton")
             {
                 await sw.WriteLineAsync("## MODE: SKELETON_ARCHITECTURE_REVIEW");
-                await sw.WriteLineAsync("- TASK_1: Analyze architecture and design patterns solely from class/method signatures.");
-                await sw.WriteLineAsync("- TASK_2: Identify SOLID violations, excessive coupling, and naming inconsistencies.");
+                await sw.WriteLineAsync(
+                    "- TASK_1: Analyze architecture and design patterns solely from class/method signatures.");
+                await sw.WriteLineAsync(
+                    "- TASK_2: Identify SOLID violations, excessive coupling, and naming inconsistencies.");
                 await sw.WriteLineAsync("- TASK_3: Suggest structural refactoring based on the skeleton overview.");
-                await sw.WriteLineAsync("- NOTE: Method bodies have been stripped to reduce token usage. Focus on structure, not implementation.");
-            }
-            else if (taskMode == "feature")
-            {
-                await sw.WriteLineAsync("## MODE: NEW_FEATURE_GENERATION");
-                await sw.WriteLineAsync("- TASK_1: 仔细阅读【框架模式速查卡】，理解项目的固定编码规范。");
-                await sw.WriteLineAsync("- TASK_2: 根据业务需求，生成完全符合现有框架规范的新功能代码。");
-                await sw.WriteLineAsync("- TASK_3: 生成的代码必须可以直接编译运行，不得引入任何新的外部依赖。");
-                await sw.WriteLineAsync("- TASK_4: JSON配置文件仅展示结构Schema（首条数据），配置数值请按游戏平衡自行填写。");
+                await sw.WriteLineAsync(
+                    "- NOTE: Method bodies have been stripped to reduce token usage. Focus on structure, not implementation.");
             }
             else
             {
@@ -205,10 +176,8 @@ public class FolderDocumentGenerator
             }
 
             await sw.WriteLineAsync("<OutputStrictConstraint>");
-            await sw.WriteLineAsync("- RULE_1: You MUST output using the following Markdown format for EVERY change.");
-            await sw.WriteLineAsync("- RULE_2: You MUST provide the ENTIRE method or logic block. DO NOT use snippets (e.g., `...`) or partial updates.");
-            await sw.WriteLineAsync("- RULE_3: The [Modified] code block MUST NOT contain line numbers.");
-            await sw.WriteLineAsync("- RULE_8: You MUST answer in Chinese.");
+            await sw.WriteLineAsync("- RULE_1: You MUST output every change using a code block format.");
+            await sw.WriteLineAsync("- RULE_2: You MUST answer in Chinese.");
             await sw.WriteLineAsync("</OutputStrictConstraint>\n\n---\n");
 
             await sw.WriteLineAsync($"# {projectName} 项目文档");
@@ -219,13 +188,15 @@ public class FolderDocumentGenerator
 
             if (reachableClasses != null)
             {
-                await sw.WriteLineAsync($"> ℹ️ **类引用过滤模式**：以 `{string.Join(", ", entryClasses)}` 为入口，仅保留 {reachableClasses.Count} 个可达类的相关代码。\n");
+                await sw.WriteLineAsync(
+                    $"> ℹ️ **类引用过滤模式**：以 `{string.Join(", ", entryClasses)}` 为入口，仅保留 {reachableClasses.Count} 个可达类的相关代码。\n");
             }
-            
+
             Console.WriteLine("[2/5] 正在构建目录树...");
             await sw.WriteLineAsync("## 1. 项目目录结构\n```text");
             await sw.WriteLineAsync($"{projectName}/");
-            await _directoryTraversal.BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes, excludedFolders, _fileSystem);
+            await _directoryTraversal.BuildTreeRecursiveAsync(rootPath, rootPath, "", sw, currentRegexes,
+                excludedFolders, _fileSystem);
             await sw.WriteLineAsync("```\n---\n");
 
             Console.WriteLine("[3/5] 正在处理源码...");
@@ -245,7 +216,8 @@ public class FolderDocumentGenerator
             await sw.WriteLineAsync($"- **代码总行数**: {stats.LineCount}");
             await sw.WriteLineAsync($"- **安全状态**: 已自动执行正则脱敏");
             if (reachableClasses != null)
-                await sw.WriteLineAsync($"- **引用过滤**: 已启用，入口类: {string.Join(", ", entryClasses)}，可达类数量: {reachableClasses.Count}");
+                await sw.WriteLineAsync(
+                    $"- **引用过滤**: 已启用，入口类: {string.Join(", ", entryClasses)}，可达类数量: {reachableClasses.Count}");
         }
 
         Console.WriteLine("[5/5] 文档生成成功！");
@@ -371,7 +343,7 @@ public class FolderDocumentGenerator
         }
 
         DrainQueue();
-        
+
         if (maxDepth != 0)
         {
             bool changed;
@@ -390,6 +362,7 @@ public class FolderDocumentGenerator
                     queue.Enqueue((implClass, implDepth));
                     changed = true;
                 }
+
                 DrainQueue();
             } while (changed);
         }
