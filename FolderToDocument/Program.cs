@@ -26,14 +26,8 @@ try
     // ────────────────────────────────────────────────────────────────────
     var includedPatterns = new List<string>
     {
-        "ZYMarriageModule/**",
-        //"ZYWdBusinessModule/**",
-        //"ZYBasisBusinessModule/**",
-        //"ZYBotCoreModule/**",
-        //"ZYRepositoryModule/**",
-        //"ZYWdCombatModule/**",
-        //"ZYWdCommonModule/**",
-        //"ZYWdConfigManagerModule/**",
+        "ZYHuaKuiModule/**",
+        "PropPurchaseModule/**",
         //"*.sln",
         //"global.json",
     };
@@ -94,11 +88,14 @@ try
     // ────────────────────────────────────────────────────────────────────
     var myRequirements = new List<string>
     {
-        "📜结婚证：H2602081645XXXX放在伴侣后面",
-        "结婚证格式为：H+年月日+几点几分+随机四位数（年份只取后2尾数，譬如2026年取数字26，随机的四位数不得重复，每个结婚证号都是唯一的）",
+        "现在要把花魁商城对应物品的图片上传到本地以供日后调用，用这种方式实现public static string ImageToBase64DataUrl(string imagePath)\n{\n    byte[] imageBytes = File.ReadAllBytes(imagePath);\n    string base64 = Convert.ToBase64String(imageBytes);\n\n    string extension = Path.GetExtension(imagePath).ToLower();\n    string mimeType = extension switch\n    {\n        \".jpg\" or \".jpeg\" => \"image/jpeg\",\n        \".png\" => \"image/png\",\n        \".gif\" => \"image/gif\",\n        \".webp\" => \"image/webp\",\n        _ => \"application/octet-stream\"\n    };\n\n    return $\"data:{mimeType};base64,{base64}\";\n}", 
         "明白代码所用框架及修改目标所需模型有无缺少，如果缺乏必要相关代码，告诉我提供。",
-        "不允许修改代码，用自己的理解描述我的需求，我确认后再修改",
-        //"修改代码如果影响其他功能，修改时做相应修改",
+        "不允许修改代码，用自己的理解描述我的需求，我确认后再修改"
+        // 请执行以下步骤：
+        // 1. 先分析整个文件，列出所有因本次修改而需要同步修改的位置（行号或代码片段）。
+        // 2. 然后对列表中的每一个位置，输出修改后的代码及其前后两行（可输出多个这样的代码块）。
+        // 3. 不要省略任何位置，即使会输出多个代码块。
+       
     };
 
     // 路径合法性校验
