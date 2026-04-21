@@ -128,7 +128,7 @@ public class FolderDocumentGenerator
             }
             
             await sw.WriteLineAsync("## MANDATORY_RULES:");
-            await sw.WriteLineAsync("- RULE_C: 新增指令类必须通过构造函数注入依赖，不得使用 ServiceLocator 模式。");
+            await sw.WriteLineAsync("- RULE_C: New command classes must inject dependencies via constructor, and must not use the ServiceLocator pattern.");
             
             // 写入 MODE 和 TASK（与原来相同）
             if (taskMode == "debug")

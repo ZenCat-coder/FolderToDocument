@@ -10,10 +10,10 @@ try
     // ────────────────────────────────────────────────────────────────────
     // 【步骤 1】指定要扫描的项目根目录路径
     // ────────────────────────────────────────────────────────────────────
-    //string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
+    // string folderPath = @"E:\MyCode\C#\MyReview\FolderToDocument";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoPlatform";
-    //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoPlatformServer";
     //string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPao.SanJieWenDao";
+    // string folderPath = @"E:\MyCode\C#\MyWork\ZYSmsSendApi";
     string folderPath = @"E:\MyCode\C#\MyWork\ZYLuoSanPaoGroupGame";
 
     // ────────────────────────────────────────────────────────────────────
@@ -26,8 +26,8 @@ try
     // ────────────────────────────────────────────────────────────────────
     var includedPatterns = new List<string>
     {
-        "ZYHuaKuiModule/**",
-        "PropPurchaseModule/**",
+        "ZYHappyFarmGameModule/**",
+        //"PropPurchaseModule/**",
         //"*.sln",
         //"global.json",
     };
@@ -47,8 +47,9 @@ try
     var entryClasses = new List<string>
     {
         //"HappyFarmCommand",
+        //"WebWdService"
     };
-    int entryClassesMaxDepth = 1;
+    int entryClassesMaxDepth = 3;
 
     // ────────────────────────────────────────────────────────────────────
     // 【步骤 4】配置排除项
@@ -88,7 +89,7 @@ try
     // ────────────────────────────────────────────────────────────────────
     var myRequirements = new List<string>
     {
-        "现在要把花魁商城对应物品的图片上传到本地以供日后调用，用这种方式实现public static string ImageToBase64DataUrl(string imagePath)\n{\n    byte[] imageBytes = File.ReadAllBytes(imagePath);\n    string base64 = Convert.ToBase64String(imageBytes);\n\n    string extension = Path.GetExtension(imagePath).ToLower();\n    string mimeType = extension switch\n    {\n        \".jpg\" or \".jpeg\" => \"image/jpeg\",\n        \".png\" => \"image/png\",\n        \".gif\" => \"image/gif\",\n        \".webp\" => \"image/webp\",\n        _ => \"application/octet-stream\"\n    };\n\n    return $\"data:{mimeType};base64,{base64}\";\n}", 
+        "",
         "明白代码所用框架及修改目标所需模型有无缺少，如果缺乏必要相关代码，告诉我提供。",
         "不允许修改代码，用自己的理解描述我的需求，我确认后再修改"
         // 请执行以下步骤：
@@ -125,7 +126,7 @@ try
         folderPath,
         null,
         includedPatterns,
-        taskMode: "debug",
+        taskMode: "optimize",
         customRequirements: myRequirements,
         excludedClasses: excludedClasses,
         preservedMethods: preservedMethods,

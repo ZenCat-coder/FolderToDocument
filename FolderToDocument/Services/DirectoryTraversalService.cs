@@ -47,7 +47,9 @@ public class DirectoryTraversalService : IDirectoryTraversalService
 
         var allItems = dirs.Concat(files)
             .Select(path => new { Path = path, IsDir = fileSystem.IsDirectory(path) })
-            .Where(x => IsPathIncluded(fileSystem.GetRelativePath(x.Path, rootPath), includeRegexes, x.IsDir))
+            .Where(x => x.IsDir
+                ? true  // 目录始终递归，过滤职责交给文件层
+                : IsPathIncluded(fileSystem.GetRelativePath(x.Path, rootPath), includeRegexes, x.IsDir))
             .ToList();
 
         for (int i = 0; i < allItems.Count; i++)
@@ -293,11 +295,6 @@ public class DirectoryTraversalService : IDirectoryTraversalService
 
         foreach (var directory in directories)
         {
-            string relDir = fileSystem.GetRelativePath(directory, rootPath);
-
-            bool shouldRecurse = reachableFilterActive || IsPathIncluded(relDir, includeRegexes, true);
-
-            if (shouldRecurse)
             {
                 var subStats = await ProcessDirectoryWithStatsAsync(
                     directory, rootPath, tw, includeRegexes, taskMode,

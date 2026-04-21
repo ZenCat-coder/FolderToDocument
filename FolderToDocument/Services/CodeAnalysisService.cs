@@ -57,6 +57,15 @@ public class CodeAnalysisService : ICodeAnalysisService
 
                 foreach (var node in root.DescendantNodes().OfType<InterfaceDeclarationSyntax>())
                     allTypeNames.Add(node.Identifier.ValueText);
+                
+                foreach (var node in root.DescendantNodes().OfType<RecordDeclarationSyntax>())
+                    allTypeNames.Add(node.Identifier.ValueText);
+
+                foreach (var node in root.DescendantNodes().OfType<EnumDeclarationSyntax>())
+                    allTypeNames.Add(node.Identifier.ValueText);
+
+                foreach (var node in root.DescendantNodes().OfType<StructDeclarationSyntax>())
+                    allTypeNames.Add(node.Identifier.ValueText);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -185,46 +194,28 @@ public class CodeAnalysisService : ICodeAnalysisService
         var tree = CSharpSyntaxTree.ParseText(source);
         var root = await tree.GetRootAsync();
 
-        var allClasses = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
+        var allClasses    = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
         var allInterfaces = root.DescendantNodes().OfType<InterfaceDeclarationSyntax>().ToList();
+        var allRecords    = root.DescendantNodes().OfType<RecordDeclarationSyntax>().ToList();
+        var allEnums      = root.DescendantNodes().OfType<EnumDeclarationSyntax>().ToList();
+        var allStructs    = root.DescendantNodes().OfType<StructDeclarationSyntax>().ToList();
 
-        if (allClasses.Count == 0 && allInterfaces.Count == 0)
+        if (allClasses.Count == 0 && allInterfaces.Count == 0 &&
+            allRecords.Count == 0 && allEnums.Count == 0 && allStructs.Count == 0)
             return (source, false);
 
         bool anyReachable =
-            allClasses.Any(c => reachableClasses.Contains(c.Identifier.ValueText)) ||
-            allInterfaces.Any(i => reachableClasses.Contains(i.Identifier.ValueText));
+            allClasses.Any(c    => reachableClasses.Contains(c.Identifier.ValueText)) ||
+            allInterfaces.Any(i => reachableClasses.Contains(i.Identifier.ValueText)) ||
+            allRecords.Any(r    => reachableClasses.Contains(r.Identifier.ValueText)) ||
+            allEnums.Any(e      => reachableClasses.Contains(e.Identifier.ValueText)) ||
+            allStructs.Any(s    => reachableClasses.Contains(s.Identifier.ValueText));
 
         if (!anyReachable)
             return (source, true);
 
-        var rewriter = new ClassKeepRewriter(reachableClasses);
-        var newRoot = rewriter.Visit(root);
-        return (newRoot.ToFullString(), false);
-    }
-
-    private sealed class ClassKeepRewriter : CSharpSyntaxRewriter
-    {
-        private readonly HashSet<string> _keepNames;
-
-        public ClassKeepRewriter(IEnumerable<string> keepNames)
-        {
-            _keepNames = new HashSet<string>(keepNames, StringComparer.Ordinal);
-        }
-
-        public override SyntaxNode VisitClassDeclaration(ClassDeclarationSyntax node)
-        {
-            if (!_keepNames.Contains(node.Identifier.ValueText))
-                return null;
-            return base.VisitClassDeclaration(node);
-        }
-
-        public override SyntaxNode VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
-        {
-            if (!_keepNames.Contains(node.Identifier.ValueText))
-                return null;
-            return base.VisitInterfaceDeclaration(node);
-        }
+        // 命中后直接返回完整原文，不裁剪任何类型
+        return (source, false);
     }
 
     public async Task<(string FilteredSource, bool AllExcluded)> RemoveExcludedClassesAsync(
