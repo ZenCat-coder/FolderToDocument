@@ -224,42 +224,14 @@ public class CodeAnalysisService : ICodeAnalysisService
     {
         var tree = CSharpSyntaxTree.ParseText(source);
         var root = await tree.GetRootAsync();
-
-        int originalMatchCount = root.DescendantNodes()
+        
+        bool anyHit = root.DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
-            .Count(c => excludedClasses.Contains(c.Identifier.ValueText));
+            .Any(c => excludedClasses.Contains(c.Identifier.ValueText));
 
-        var rewriter = new ClassRemovalRewriter(excludedClasses);
-        var newRoot = rewriter.Visit(root);
-        string filtered = newRoot.ToFullString();
-
-        int remainingClassCount = newRoot.DescendantNodes()
-            .OfType<ClassDeclarationSyntax>()
-            .Count();
-
-        bool allExcluded =
-            originalMatchCount > 0 &&
-            remainingClassCount == 0;
-
-        return (filtered, allExcluded);
+        return anyHit ? (source, true) : (source, false);
     }
 
-    private sealed class ClassRemovalRewriter : CSharpSyntaxRewriter
-    {
-        private readonly HashSet<string> _excludedNames;
-
-        public ClassRemovalRewriter(IEnumerable<string> excludedNames)
-        {
-            _excludedNames = new HashSet<string>(excludedNames, StringComparer.Ordinal);
-        }
-
-        public override SyntaxNode VisitClassDeclaration(ClassDeclarationSyntax node)
-        {
-            if (_excludedNames.Contains(node.Identifier.ValueText))
-                return null;
-            return base.VisitClassDeclaration(node);
-        }
-    }
 
     public async Task<string> ExtractCSharpSkeletonAsync(
         string source,
@@ -372,7 +344,7 @@ public class CodeAnalysisService : ICodeAnalysisService
             if (retStr.Length > 0) parts.Add($"→ {retStr}");
 
             var throwTypes = body.DescendantNodes()
-                .Select<SyntaxNode, string>(n => n switch
+                .Select(n => n switch
                 {
                     ThrowStatementSyntax ts => (ts.Expression as ObjectCreationExpressionSyntax)?.Type.ToString() ?? "",
                     ThrowExpressionSyntax te => (te.Expression as ObjectCreationExpressionSyntax)?.Type.ToString() ?? "",
