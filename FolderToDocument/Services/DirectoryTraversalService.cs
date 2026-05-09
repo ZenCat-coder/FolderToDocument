@@ -218,7 +218,11 @@ public class DirectoryTraversalService : IDirectoryTraversalService
                 if (strategy == FileOutputStrategy.UltraSkeleton && extension == ".cs" && !IsConfigFile(file))
                 {
                     string sourceForUltra = preloadedSource ?? await File.ReadAllTextAsync(file, Encoding.UTF8);
-                    string ultraSkeleton = await codeAnalysis.ExtractUltraSkeletonAsync(sourceForUltra);
+                    
+                    string ultraSkeleton = preservedMethods is { Count: > 0 }
+                        ? await codeAnalysis.ExtractCSharpSkeletonAsync(sourceForUltra, preservedMethods)
+                        : await codeAnalysis.ExtractUltraSkeletonAsync(sourceForUltra);
+                    
                     string fence = ultraSkeleton.Contains("```") ? "~~~~" : "```";
                     await tw.WriteLineAsync($"{fence}csharp");
                     using var sr = new StringReader(ultraSkeleton);
