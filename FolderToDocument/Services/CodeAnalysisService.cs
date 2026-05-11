@@ -57,7 +57,7 @@ public class CodeAnalysisService : ICodeAnalysisService
 
                 foreach (var node in root.DescendantNodes().OfType<InterfaceDeclarationSyntax>())
                     allTypeNames.Add(node.Identifier.ValueText);
-                
+
                 foreach (var node in root.DescendantNodes().OfType<RecordDeclarationSyntax>())
                     allTypeNames.Add(node.Identifier.ValueText);
 
@@ -92,6 +92,7 @@ public class CodeAnalysisService : ICodeAnalysisService
                         existing = new HashSet<string>(StringComparer.Ordinal);
                         graph[typeName] = existing;
                     }
+
                     foreach (var refName in refs)
                         existing.Add(refName);
                 }
@@ -194,28 +195,39 @@ public class CodeAnalysisService : ICodeAnalysisService
         var tree = CSharpSyntaxTree.ParseText(source);
         var root = await tree.GetRootAsync();
 
-        var allClasses    = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
+        var allClasses = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
         var allInterfaces = root.DescendantNodes().OfType<InterfaceDeclarationSyntax>().ToList();
-        var allRecords    = root.DescendantNodes().OfType<RecordDeclarationSyntax>().ToList();
-        var allEnums      = root.DescendantNodes().OfType<EnumDeclarationSyntax>().ToList();
-        var allStructs    = root.DescendantNodes().OfType<StructDeclarationSyntax>().ToList();
+        var allRecords = root.DescendantNodes().OfType<RecordDeclarationSyntax>().ToList();
+        var allEnums = root.DescendantNodes().OfType<EnumDeclarationSyntax>().ToList();
+        var allStructs = root.DescendantNodes().OfType<StructDeclarationSyntax>().ToList();
 
         if (allClasses.Count == 0 && allInterfaces.Count == 0 &&
             allRecords.Count == 0 && allEnums.Count == 0 && allStructs.Count == 0)
             return (source, false);
 
         bool anyReachable =
-            allClasses.Any(c    => reachableClasses.Contains(c.Identifier.ValueText)) ||
+            allClasses.Any(c => reachableClasses.Contains(c.Identifier.ValueText)) ||
             allInterfaces.Any(i => reachableClasses.Contains(i.Identifier.ValueText)) ||
-            allRecords.Any(r    => reachableClasses.Contains(r.Identifier.ValueText)) ||
-            allEnums.Any(e      => reachableClasses.Contains(e.Identifier.ValueText)) ||
-            allStructs.Any(s    => reachableClasses.Contains(s.Identifier.ValueText));
+            allRecords.Any(r => reachableClasses.Contains(r.Identifier.ValueText)) ||
+            allEnums.Any(e => reachableClasses.Contains(e.Identifier.ValueText)) ||
+            allStructs.Any(s => reachableClasses.Contains(s.Identifier.ValueText));
 
         if (!anyReachable)
             return (source, true);
 
-        // 命中后直接返回完整原文，不裁剪任何类型
-        return (source, false);
+        // 收集所有不可达的顶层类型节点
+        var nodesToRemove = new List<SyntaxNode>();
+        nodesToRemove.AddRange(allClasses.Where(c => !reachableClasses.Contains(c.Identifier.ValueText)));
+        nodesToRemove.AddRange(allInterfaces.Where(i => !reachableClasses.Contains(i.Identifier.ValueText)));
+        nodesToRemove.AddRange(allRecords.Where(r => !reachableClasses.Contains(r.Identifier.ValueText)));
+        nodesToRemove.AddRange(allEnums.Where(e => !reachableClasses.Contains(e.Identifier.ValueText)));
+        nodesToRemove.AddRange(allStructs.Where(s => !reachableClasses.Contains(s.Identifier.ValueText)));
+
+        if (nodesToRemove.Count == 0)
+            return (source, false);
+
+        var filteredRoot = root.RemoveNodes(nodesToRemove, SyntaxRemoveOptions.KeepNoTrivia);
+        return (filteredRoot?.ToFullString(), false);
     }
 
     public async Task<(string FilteredSource, bool AllExcluded)> RemoveExcludedClassesAsync(
@@ -224,7 +236,7 @@ public class CodeAnalysisService : ICodeAnalysisService
     {
         var tree = CSharpSyntaxTree.ParseText(source);
         var root = await tree.GetRootAsync();
-        
+
         bool anyHit = root.DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
             .Any(c => excludedClasses.Contains(c.Identifier.ValueText));
@@ -347,7 +359,8 @@ public class CodeAnalysisService : ICodeAnalysisService
                 .Select(n => n switch
                 {
                     ThrowStatementSyntax ts => (ts.Expression as ObjectCreationExpressionSyntax)?.Type.ToString() ?? "",
-                    ThrowExpressionSyntax te => (te.Expression as ObjectCreationExpressionSyntax)?.Type.ToString() ?? "",
+                    ThrowExpressionSyntax te => (te.Expression as ObjectCreationExpressionSyntax)?.Type.ToString() ??
+                                                "",
                     _ => ""
                 })
                 .Where(t => t.Length > 0)
