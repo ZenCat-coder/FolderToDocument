@@ -1,0 +1,9 @@
+{
+  "explorer.excludeGitIgnore": true,
+  "files.watcherExclude": {
+    "**​/bin/​**": true,
+    "**​/obj/​**": true,
+    "**​/.idea/​**": true,
+    "**​/.vs/​**": true
+  }
+}
